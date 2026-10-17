@@ -34,6 +34,9 @@ defmodule ZipfelschmausWeb.Router do
     live_session :require_authenticated_user,
       on_mount: [{ZipfelschmausWeb.UserAuth, :require_authenticated}] do
       live "/", HomeLive
+      live "/lists/new", ListSettingsLive, :new
+      live "/lists/:id", ListLive
+      live "/lists/:id/settings", ListSettingsLive, :edit
       live "/me", MeLive
     end
   end
