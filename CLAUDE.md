@@ -14,6 +14,7 @@
   - `mix compile --warnings-as-errors`
   - `mix credo --strict`
   - `mix test --warnings-as-errors`
+  - `node --test assets/test/*.test.js` (Node 22, no packages)
   - `mix assets.setup && mix assets.deploy`
 
 ## Conventions
