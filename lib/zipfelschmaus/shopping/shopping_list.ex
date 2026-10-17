@@ -1,5 +1,8 @@
 defmodule Zipfelschmaus.Shopping.ShoppingList do
-  @moduledoc "A shopping list: its owner's alone, or shared with everyone in the household."
+  @moduledoc """
+  A shopping list: its owner's alone, or shared with everyone in the household. `area_order`
+  holds the area ids the way you walk through its shop.
+  """
   use Zipfelschmaus.Schema
 
   import Ecto.Changeset
@@ -11,6 +14,7 @@ defmodule Zipfelschmaus.Shopping.ShoppingList do
   schema "lists" do
     field :name, :string
     field :shared, :boolean, default: false
+    field :area_order, {:array, :integer}, default: []
     field :open_count, :integer, virtual: true
 
     belongs_to :owner, User

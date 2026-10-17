@@ -47,6 +47,27 @@ defmodule ZipfelschmausWeb.ListSettingsLiveTest do
     assert %{name: "Drogerie", shared: true} = Shopping.get_list(Scope.for_user(user), list.id)
   end
 
+  test "moves an area in the list's area order", %{conn: conn, user: user} do
+    list = list_fixture(user, name: "Supermarkt")
+    {:ok, view, _html} = live(conn, ~p"/lists/#{list}/settings")
+    assert has_element?(view, "#area-obst-und-gemuese-up[disabled]")
+    assert has_element?(view, "#area-sonstiges-down[disabled]")
+
+    view |> element("#area-kuehlregal-up") |> render_click()
+
+    assert view |> render() |> area_names() |> Enum.take(3) ==
+             ["Obst und Gemüse", "Kühlregal", "Brot und Backwaren"]
+
+    saved = Shopping.get_list(Scope.for_user(user), list.id)
+    assert saved |> Shopping.list_areas() |> Enum.map(& &1.name) == area_names(render(view))
+  end
+
+  test "a new list shows no area order yet", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/lists/new")
+
+    refute has_element?(view, "#area-order")
+  end
+
   test "deletes a list after asking", %{conn: conn, user: user} do
     list = list_fixture(user, name: "DM")
     {:ok, view, _html} = live(conn, ~p"/lists/#{list}/settings")
@@ -67,5 +88,13 @@ defmodule ZipfelschmausWeb.ListSettingsLiveTest do
              live(other_conn, ~p"/lists/#{list}/settings")
 
     assert message == "Diese Liste gibt es für dich nicht."
+  end
+
+  defp area_names(html) do
+    html
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.query("#area-order li .font-medium")
+    |> Enum.map(&LazyHTML.text/1)
+    |> Enum.map(&String.trim/1)
   end
 end

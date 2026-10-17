@@ -31,7 +31,7 @@ defmodule ZipfelschmausWeb.SharedListsTest do
     {:ok, anna_view, _html} = live(conn, ~p"/lists/#{list}")
     {:ok, ben_view, _html} = live(ben_conn, ~p"/lists/#{list}")
 
-    ben_view |> element("#entry-#{entry.id} button") |> render_click()
+    ben_view |> element("#entry-#{entry.id} button", "Abhaken: Eier") |> render_click()
 
     refute has_element?(anna_view, "#open-entries #entry-#{entry.id}")
     assert has_element?(anna_view, "#recent-entries #entry-#{entry.id}", "Eier")

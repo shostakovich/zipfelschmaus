@@ -175,13 +175,19 @@ defmodule Zipfelschmaus.ShoppingTest do
   describe "the entries of a list" do
     setup %{anna: anna}, do: %{list: list_fixture(anna, shared: true)}
 
-    test "open entries follow the default area order, then the name",
+    test "open entries follow the list's area order, then the name",
          %{anna: anna, list: list} do
       for name <- ["Zahnpasta", "Milch", "Butter", "Äpfel", "Bananen"],
           do: entry_fixture(anna, list, name)
 
       assert list |> Shopping.list_open_entries() |> Enum.map(& &1.article.name) ==
                ["Äpfel", "Bananen", "Butter", "Milch", "Zahnpasta"]
+
+      {:ok, list} = Shopping.move_area(Scope.for_user(anna), list, area_id("Kühlregal"), :up)
+      {:ok, list} = Shopping.move_area(Scope.for_user(anna), list, area_id("Kühlregal"), :up)
+
+      assert list |> Shopping.list_open_entries() |> Enum.map(& &1.article.name) ==
+               ["Butter", "Milch", "Äpfel", "Bananen", "Zahnpasta"]
     end
 
     test ~s(a check-off moves the entry to "Zuletzt verwendet", newest first),
@@ -250,4 +256,133 @@ defmodule Zipfelschmaus.ShoppingTest do
       assert [_open] = Shopping.list_open_entries(private)
     end
   end
+
+  describe "area order" do
+    setup %{anna: anna}, do: %{list: list_fixture(anna, shared: true)}
+
+    test "a new list copies the default area order", %{list: list} do
+      default = Enum.map(Catalog.list_areas(), & &1.id)
+
+      assert list.area_order == default
+      assert Enum.map(Shopping.list_areas(list), & &1.id) == default
+    end
+
+    test "the owner moves an area up and down, announced on the list's topic",
+         %{as_anna: as_anna, list: list} do
+      default = area_names(list)
+      index = Enum.find_index(default, &(&1 == "Drogerie"))
+      Shopping.subscribe_list(list.id)
+
+      {:ok, list} = Shopping.move_area(as_anna, list, area_id("Drogerie"), :up)
+
+      assert_receive {:list_changed, id} when id == list.id
+      assert Enum.at(area_names(list), index - 1) == "Drogerie"
+      assert Enum.at(area_names(list), index) == Enum.at(default, index - 1)
+
+      {:ok, list} = Shopping.move_area(as_anna, list, area_id("Drogerie"), :down)
+
+      assert area_names(list) == default
+      assert Shopping.get_list(as_anna, list.id).area_order == list.area_order
+    end
+
+    test "the first area does not move up, the last not down", %{as_anna: as_anna, list: list} do
+      [first | _] = names = area_names(list)
+      last = List.last(names)
+
+      {:ok, list} = Shopping.move_area(as_anna, list, area_id(first), :up)
+      {:ok, list} = Shopping.move_area(as_anna, list, area_id(last), :down)
+
+      assert area_names(list) == names
+    end
+
+    test "each list keeps its own order", %{anna: anna, as_anna: as_anna, list: list} do
+      other = list_fixture(anna, name: "Bioladen")
+
+      {:ok, _list} = Shopping.move_area(as_anna, list, area_id("Kühlregal"), :up)
+
+      assert Enum.take(area_names(other), 3) ==
+               ["Obst und Gemüse", "Brot und Backwaren", "Kühlregal"]
+    end
+
+    test "an area the list does not know yet comes last", %{list: list} do
+      [first | rest] = list.area_order
+      list = %{list | area_order: rest}
+
+      assert List.last(Shopping.list_areas(list)).id == first
+    end
+
+    test "only the owner changes the area order", %{as_ben: as_ben, list: list} do
+      assert Shopping.move_area(as_ben, list, area_id("Drogerie"), :up) == {:error, :not_found}
+      assert Shopping.get_list(as_ben, list.id).area_order == list.area_order
+    end
+  end
+
+  describe "editing an entry" do
+    setup %{anna: anna}, do: %{list: list_fixture(anna, shared: true)}
+
+    test "changes its detail; a blank one removes it",
+         %{anna: anna, as_ben: as_ben, list: list} do
+      milk = entry_fixture(anna, list, "Milch", "2 l")
+      Shopping.subscribe_list(list.id)
+
+      {:ok, entry} = Shopping.update_detail(as_ben, milk.id, %{detail: " 3 l "})
+      assert entry.detail == "3 l"
+      assert_receive {:list_changed, id} when id == list.id
+
+      {:ok, entry} = Shopping.update_detail(as_ben, milk.id, %{detail: "  "})
+      assert entry.detail == nil
+    end
+
+    test "refuses an overlong detail", %{anna: anna, as_anna: as_anna, list: list} do
+      milk = entry_fixture(anna, list, "Milch", "2 l")
+
+      assert {:error, changeset} =
+               Shopping.update_detail(as_anna, milk.id, %{detail: String.duplicate("x", 81)})
+
+      assert %{detail: ["darf höchstens 80 Zeichen lang sein"]} = errors_on(changeset)
+    end
+
+    test "an area set by hand moves the article on every list and stays",
+         %{anna: anna, ben: ben, as_ben: as_ben, list: list} do
+      private = list_fixture(anna, name: "DM", shared: false)
+      tabs = entry_fixture(anna, list, "Spülmaschinentabs")
+      entry_fixture(anna, private, "Spülmaschinentabs")
+      Shopping.subscribe_list(private.id)
+
+      {:ok, article} = Shopping.set_area(as_ben, tabs.id, area_id("Haushalt"))
+
+      assert article.area_set_by_hand
+      assert_receive {:list_changed, id} when id == private.id
+
+      for l <- [list, private],
+          do: assert([%{article: %{area: %{name: "Haushalt"}}}] = Shopping.list_open_entries(l))
+
+      ben_list = list_fixture(ben, name: "Baumarkt")
+      entry = entry_fixture(ben, ben_list, "spülmaschinentabs")
+      assert Shopping.get_entry(as_ben, entry.id).article.area.name == "Haushalt"
+    end
+
+    test "entries of a list the user does not see stay as they are",
+         %{ben: ben, as_anna: as_anna} do
+      private = list_fixture(ben, shared: false)
+      milk = entry_fixture(ben, private, "Milch", "2 l")
+
+      assert Shopping.get_entry(as_anna, milk.id) == nil
+      assert Shopping.update_detail(as_anna, milk.id, %{detail: "3 l"}) == {:error, :not_found}
+      assert Shopping.set_area(as_anna, milk.id, area_id("Haushalt")) == {:error, :not_found}
+
+      assert [%{detail: "2 l", article: %{area: %{name: "Kühlregal"}}}] =
+               Shopping.list_open_entries(private)
+    end
+
+    test "an unknown area is refused", %{anna: anna, as_anna: as_anna, list: list} do
+      milk = entry_fixture(anna, list, "Milch")
+
+      assert Shopping.set_area(as_anna, milk.id, -1) == {:error, :not_found}
+    end
+  end
+
+  defp area_id(name), do: Enum.find(Catalog.list_areas(), &(&1.name == name)).id
+
+  defp area_names(list), do: Enum.map(Shopping.list_areas(list), & &1.name)
 end

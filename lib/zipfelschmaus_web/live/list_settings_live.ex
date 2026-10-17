@@ -1,7 +1,7 @@
 defmodule ZipfelschmausWeb.ListSettingsLive do
   @moduledoc """
-  A new list, or the settings of one: name and sharing, and deleting it. Only the owner reaches
-  the settings.
+  A new list, or the settings of one: name and sharing, its area order, and deleting it. Only
+  the owner reaches the settings. A move in the area order is saved at once.
   """
   use ZipfelschmausWeb, :live_view
 
@@ -26,7 +26,8 @@ defmodule ZipfelschmausWeb.ListSettingsLive do
 
       list ->
         socket
-        |> assign(page_title: Layouts.page_title("Liste bearbeiten"), list: list)
+        |> assign(page_title: Layouts.page_title("Liste bearbeiten"))
+        |> assign_list(list)
         |> assign_form(Shopping.change_list(list))
     end
   end
@@ -47,6 +48,15 @@ defmodule ZipfelschmausWeb.ListSettingsLive do
     end
   end
 
+  def handle_event("move_area", %{"id" => area_id, "direction" => direction}, socket) do
+    %{current_scope: scope, list: list} = socket.assigns
+
+    case Shopping.move_area(scope, list, area_id, direction(direction)) do
+      {:ok, list} -> {:noreply, assign_list(socket, list)}
+      {:error, :not_found} -> {:noreply, socket}
+    end
+  end
+
   def handle_event("delete", _params, socket) do
     {:ok, list} = Shopping.delete_list(socket.assigns.current_scope, socket.assigns.list)
 
@@ -60,6 +70,12 @@ defmodule ZipfelschmausWeb.ListSettingsLive do
 
   defp save(socket, :edit, params),
     do: Shopping.update_list(socket.assigns.current_scope, socket.assigns.list, params)
+
+  defp direction("up"), do: :up
+  defp direction("down"), do: :down
+
+  defp assign_list(socket, list),
+    do: assign(socket, list: list, areas: Shopping.list_areas(list))
 
   defp assign_form(socket, changeset), do: assign(socket, :form, to_form(changeset, as: :list))
 
@@ -101,6 +117,38 @@ defmodule ZipfelschmausWeb.ListSettingsLive do
           </.button>
         </.action_bar>
       </.form>
+
+      <section
+        :if={@live_action == :edit}
+        id="area-order"
+        aria-labelledby="area-order-title"
+        class="mt-8"
+      >
+        <.section_heading id="area-order-title">Reihenfolge der Bereiche</.section_heading>
+        <p class="mb-2 text-sm text-base-content/70">So, wie du durch den Laden gehst.</p>
+        <.list>
+          <.list_row
+            :for={{area, index} <- Enum.with_index(@areas)}
+            id={"area-#{area.key}"}
+            title={area.name}
+          >
+            <:action
+              id={"area-#{area.key}-up"}
+              label="Nach oben"
+              icon="chevron-up"
+              disabled={index == 0}
+              on_click={JS.push("move_area", value: %{id: area.id, direction: "up"})}
+            />
+            <:action
+              id={"area-#{area.key}-down"}
+              label="Nach unten"
+              icon="chevron-down"
+              disabled={index == length(@areas) - 1}
+              on_click={JS.push("move_area", value: %{id: area.id, direction: "down"})}
+            />
+          </.list_row>
+        </.list>
+      </section>
     </Layouts.app>
     """
   end

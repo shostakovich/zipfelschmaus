@@ -5,7 +5,7 @@ defmodule ZipfelschmausWeb.ListLiveTest do
   import Zipfelschmaus.ShoppingFixtures
   import Zipfelschmaus.UsersFixtures
 
-  alias Zipfelschmaus.Shopping
+  alias Zipfelschmaus.{Catalog, Shopping}
   alias Zipfelschmaus.Users.Scope
 
   setup :register_and_log_in_user
@@ -36,6 +36,83 @@ defmodule ZipfelschmausWeb.ListLiveTest do
     assert has_element?(view, "#area-kuehlregal li", "2 l")
     assert has_element?(view, "#area-kuehlregal li .avatar", "K")
     refute has_element?(view, "#recent-entries")
+  end
+
+  test "groups the open entries in the list's own area order",
+       %{conn: conn, user: user, list: list} do
+    entry_fixture(user, list, "Zahnpasta")
+    entry_fixture(user, list, "Milch")
+    entry_fixture(user, list, "Äpfel")
+    {:ok, list} = Shopping.move_area(Scope.for_user(user), list, area_id("Kühlregal"), :up)
+    {:ok, _list} = Shopping.move_area(Scope.for_user(user), list, area_id("Kühlregal"), :up)
+
+    {:ok, view, _html} = live(conn, ~p"/lists/#{list}")
+
+    assert texts(view, "#open-entries section h2") ==
+             ["Kühlregal 1", "Obst und Gemüse 1", "Drogerie 1"]
+  end
+
+  test "the entry menu changes the detail", %{conn: conn, user: user, list: list} do
+    milk = entry_fixture(user, list, "Milch", "2 l")
+    {:ok, view, _html} = live(conn, ~p"/lists/#{list}")
+
+    view |> element("#entry-#{milk.id}-detail-menu-item") |> render_click()
+
+    assert has_element?(view, ~s(#edit-entry[data-show="true"]))
+    assert has_element?(view, "#edit-entry-title", "Angabe für Milch")
+    assert has_element?(view, ~s(#edit_detail[value="2 l"]))
+
+    view |> form("#edit-detail", edit: %{detail: " 3 l "}) |> render_submit()
+
+    assert has_element?(view, ~s(#edit-entry[data-show="false"]))
+    refute has_element?(view, "#edit-detail")
+    assert has_element?(view, "#area-kuehlregal #entry-#{milk.id}", "3 l")
+  end
+
+  test "an overlong detail is refused", %{conn: conn, user: user, list: list} do
+    milk = entry_fixture(user, list, "Milch", "2 l")
+    {:ok, view, _html} = live(conn, ~p"/lists/#{list}")
+    view |> element("#entry-#{milk.id}-detail-menu-item") |> render_click()
+
+    view |> form("#edit-detail", edit: %{detail: String.duplicate("x", 81)}) |> render_submit()
+
+    assert has_element?(view, "#edit_detail-error-0", "Darf höchstens 80 Zeichen lang sein")
+    assert has_element?(view, "#entry-#{milk.id}", "2 l")
+  end
+
+  test "an area set in the entry menu applies on every list and stays",
+       %{conn: conn, user: user, list: list} do
+    tabs = entry_fixture(user, list, "Spülmaschinentabs")
+    other = list_fixture(user, name: "DM")
+    entry_fixture(user, other, "Spülmaschinentabs")
+    {:ok, other_view, _html} = live(conn, ~p"/lists/#{other}")
+    {:ok, view, _html} = live(conn, ~p"/lists/#{list}")
+    assert has_element?(view, "#area-sonstiges #entry-#{tabs.id}")
+
+    view |> element("#entry-#{tabs.id}-area-menu-item") |> render_click()
+
+    assert has_element?(view, "#edit-entry-title", "Bereich für Spülmaschinentabs")
+    assert has_element?(view, ~s(#edit-area input[value="#{area_id("Sonstiges")}"][checked]))
+
+    view
+    |> form("#edit-area", edit: %{area_id: area_id("Haushalt")})
+    |> render_submit()
+
+    assert has_element?(view, "#area-haushalt #entry-#{tabs.id}")
+    refute has_element?(view, "#area-sonstiges")
+    assert has_element?(other_view, "#area-haushalt li", "Spülmaschinentabs")
+    assert Catalog.get_article_by_name("Spülmaschinentabs").area_set_by_hand
+  end
+
+  test "closing the edit dialog changes nothing", %{conn: conn, user: user, list: list} do
+    milk = entry_fixture(user, list, "Milch", "2 l")
+    {:ok, view, _html} = live(conn, ~p"/lists/#{list}")
+    view |> element("#entry-#{milk.id}-detail-menu-item") |> render_click()
+
+    render_hook(view, "close_edit", %{})
+
+    assert has_element?(view, ~s(#edit-entry[data-show="false"]))
+    assert has_element?(view, "#entry-#{milk.id}", "2 l")
   end
 
   test "a tap checks an entry off and one in Zuletzt verwendet puts it back",
@@ -117,6 +194,8 @@ defmodule ZipfelschmausWeb.ListLiveTest do
 
     assert_redirect(view, ~p"/")
   end
+
+  defp area_id(name), do: Enum.find(Catalog.list_areas(), &(&1.name == name)).id
 
   defp texts(view, selector) do
     view

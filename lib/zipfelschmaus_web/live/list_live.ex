@@ -1,9 +1,10 @@
 defmodule ZipfelschmausWeb.ListLive do
   @moduledoc """
-  A list while shopping: the open entries grouped by area, a tap checks one off; below them
-  "Zuletzt verwendet", where a tap puts one back; at the bottom the field that adds articles.
-  Changes by others show at once; a list that is deleted or no longer shared sends the reader
-  back to the start page.
+  A list while shopping: the open entries grouped by area in the list's area order, a tap checks
+  one off; below them "Zuletzt verwendet", where a tap puts one back; at the bottom the field
+  that adds articles. Each entry's menu changes its detail or its article's area. Changes by
+  others show at once; a list that is deleted or no longer shared sends the reader back to the
+  start page.
   """
   use ZipfelschmausWeb, :live_view
 
@@ -21,20 +22,16 @@ defmodule ZipfelschmausWeb.ListLive do
 
       list ->
         if connected?(socket), do: Shopping.subscribe_list(list.id)
-        {:ok, socket |> assign_new_entry_form() |> assign_list(list)}
+        {:ok, socket |> assign_new_entry_form() |> close_edit() |> assign_list(list)}
     end
   end
 
   @impl true
-  def handle_event("check_off", %{"id" => id}, socket) do
-    Shopping.check_off(socket.assigns.current_scope, id)
-    {:noreply, reload(socket)}
-  end
+  def handle_event("check_off", %{"id" => id}, socket),
+    do: {:noreply, reload_unless_ok(socket, Shopping.check_off(socket.assigns.current_scope, id))}
 
-  def handle_event("put_back", %{"id" => id}, socket) do
-    Shopping.put_back(socket.assigns.current_scope, id)
-    {:noreply, reload(socket)}
-  end
+  def handle_event("put_back", %{"id" => id}, socket),
+    do: {:noreply, reload_unless_ok(socket, Shopping.put_back(socket.assigns.current_scope, id))}
 
   def handle_event("change_entry", %{"entry" => params}, socket) do
     {:noreply, assign(socket, :form, to_form(Shopping.change_new_entry(params), as: :entry))}
@@ -43,7 +40,7 @@ defmodule ZipfelschmausWeb.ListLive do
   def handle_event("add", %{"entry" => params}, socket) do
     case Shopping.add_entry(socket.assigns.current_scope, socket.assigns.list, params) do
       {:ok, _entry} ->
-        {:noreply, socket |> assign_new_entry_form() |> reload()}
+        {:noreply, assign_new_entry_form(socket)}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :form, to_form(changeset, as: :entry))}
@@ -53,8 +50,40 @@ defmodule ZipfelschmausWeb.ListLive do
     end
   end
 
+  def handle_event("edit_detail", %{"id" => id}, socket),
+    do: {:noreply, open_edit(socket, id, :detail)}
+
+  def handle_event("edit_area", %{"id" => id}, socket),
+    do: {:noreply, open_edit(socket, id, :area)}
+
+  def handle_event("close_edit", _params, socket), do: {:noreply, close_edit(socket)}
+
+  def handle_event("validate_detail", %{"edit" => params}, socket) do
+    changeset = Shopping.change_detail(socket.assigns.editing, params)
+    {:noreply, assign(socket, :edit_form, to_form(changeset, as: :edit, action: :validate))}
+  end
+
+  def handle_event("save_detail", %{"edit" => params}, socket) do
+    case Shopping.update_detail(socket.assigns.current_scope, socket.assigns.editing.id, params) do
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, :edit_form, to_form(changeset, as: :edit))}
+
+      saved_or_gone ->
+        {:noreply, socket |> close_edit() |> reload_unless_ok(saved_or_gone)}
+    end
+  end
+
+  def handle_event("save_area", %{"edit" => %{"area_id" => area_id}}, socket) do
+    result = Shopping.set_area(socket.assigns.current_scope, socket.assigns.editing.id, area_id)
+    {:noreply, socket |> close_edit() |> reload_unless_ok(result)}
+  end
+
   @impl true
   def handle_info({:list_changed, _list_id}, socket), do: {:noreply, reload(socket)}
+
+  # A change that worked comes back as a broadcast, which reloads.
+  defp reload_unless_ok(socket, {:ok, _changed}), do: socket
+  defp reload_unless_ok(socket, {:error, _reason}), do: reload(socket)
 
   defp reload(socket) do
     case Shopping.get_list(socket.assigns.current_scope, socket.assigns.list.id) do
@@ -71,6 +100,20 @@ defmodule ZipfelschmausWeb.ListLive do
     end
   end
 
+  defp open_edit(socket, entry_id, field) do
+    case Shopping.get_entry(socket.assigns.current_scope, entry_id) do
+      nil -> reload(socket)
+      entry -> assign(socket, editing: entry, edit: field, edit_form: edit_form(entry, field))
+    end
+  end
+
+  defp edit_form(entry, :detail), do: to_form(Shopping.change_detail(entry), as: :edit)
+
+  defp edit_form(entry, :area),
+    do: to_form(%{"area_id" => entry.article.area_id}, as: :edit)
+
+  defp close_edit(socket), do: assign(socket, editing: nil, edit: nil, edit_form: nil)
+
   defp assign_list(socket, %ShoppingList{} = list) do
     open = Shopping.list_open_entries(list)
     recent = Shopping.list_recent_entries(list)
@@ -81,6 +124,7 @@ defmodule ZipfelschmausWeb.ListLive do
       owner?: list.owner_id == socket.assigns.current_scope.user.id,
       open_count: length(open),
       areas: Enum.chunk_by(open, & &1.article.area_id),
+      area_options: for(area <- Shopping.list_areas(list), do: {area.name, area.id}),
       recent: recent,
       article_options: article_options(recent)
     )
@@ -139,16 +183,7 @@ defmodule ZipfelschmausWeb.ListLive do
               {area.name}
             </.section_heading>
             <.list>
-              <.list_row
-                :for={entry <- entries}
-                id={"entry-#{entry.id}"}
-                on_click={JS.push("check_off", value: %{id: entry.id})}
-              >
-                <span class="sr-only">Abhaken:</span>
-                {entry.article.name}
-                <:leading><.article_picture article={entry.article} /></:leading>
-                <:meta :if={entry.detail}>{entry.detail}</:meta>
-              </.list_row>
+              <.entry_row :for={entry <- entries} entry={entry} tap="check_off" tap_label="Abhaken" />
             </.list>
           </section>
         </div>
@@ -156,16 +191,12 @@ defmodule ZipfelschmausWeb.ListLive do
         <section :if={@recent != []} id="recent-entries" aria-labelledby="recent-entries-title">
           <.section_heading id="recent-entries-title">Zuletzt verwendet</.section_heading>
           <.list>
-            <.list_row
+            <.entry_row
               :for={entry <- @recent}
-              id={"entry-#{entry.id}"}
-              on_click={JS.push("put_back", value: %{id: entry.id})}
-            >
-              <span class="sr-only">Wieder auf die Liste:</span>
-              {entry.article.name}
-              <:leading><.article_picture article={entry.article} /></:leading>
-              <:meta :if={entry.detail}>{entry.detail}</:meta>
-            </.list_row>
+              entry={entry}
+              tap="put_back"
+              tap_label="Wieder auf die Liste"
+            />
           </.list>
         </section>
       </div>
@@ -198,7 +229,75 @@ defmodule ZipfelschmausWeb.ListLive do
           </div>
         </.action_bar>
       </.form>
+
+      <.modal
+        id="edit-entry"
+        show={@editing != nil}
+        title={@editing && edit_title(@edit, @editing.article.name)}
+        on_cancel={JS.push("close_edit")}
+      >
+        <.form
+          :if={@edit == :detail}
+          for={@edit_form}
+          id="edit-detail"
+          phx-change="validate_detail"
+          phx-submit="save_detail"
+        >
+          <.input field={@edit_form[:detail]} label="Angabe" maxlength="80" autocomplete="off" />
+        </.form>
+        <.form :if={@edit == :area} for={@edit_form} id="edit-area" phx-submit="save_area">
+          <.input
+            field={@edit_form[:area_id]}
+            type="radio_group"
+            label="Bereich"
+            hide_label
+            options={@area_options}
+            help="Gilt auf allen Listen."
+          />
+        </.form>
+        <:actions>
+          <.button phx-click={hide_modal("edit-entry")}>Abbrechen</.button>
+          <.button :if={@edit} type="submit" form={"edit-#{@edit}"} variant={:primary}>
+            Speichern
+          </.button>
+        </:actions>
+      </.modal>
     </Layouts.app>
     """
   end
+
+  attr :entry, :map, required: true
+  attr :tap, :string, required: true
+  attr :tap_label, :string, required: true
+
+  defp entry_row(assigns) do
+    ~H"""
+    <.list_row
+      id={"entry-#{@entry.id}"}
+      on_click={JS.push(@tap, value: %{id: @entry.id})}
+      menu={:always}
+      actions_label={"Aktionen: #{@entry.article.name}"}
+    >
+      <span class="sr-only">{@tap_label}:</span>
+      {@entry.article.name}
+      <:leading><.article_picture article={@entry.article} /></:leading>
+      <:meta :if={@entry.detail}>{@entry.detail}</:meta>
+      <:action
+        id={"entry-#{@entry.id}-detail"}
+        label="Angabe ändern"
+        icon="pencil"
+        on_click={JS.push("edit_detail", value: %{id: @entry.id})}
+      />
+      <:action
+        id={"entry-#{@entry.id}-area"}
+        label="Bereich ändern"
+        icon="tag"
+        on_click={JS.push("edit_area", value: %{id: @entry.id})}
+      />
+    </.list_row>
+    """
+  end
+
+  defp edit_title(:detail, name), do: "Angabe für #{name}"
+  defp edit_title(:area, name), do: "Bereich für #{name}"
 end

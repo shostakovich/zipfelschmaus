@@ -1,8 +1,8 @@
 defmodule Zipfelschmaus.Shopping do
   @moduledoc """
   Shopping lists and their entries, as the signed-in user of a scope sees them: their own lists
-  and those shared with the household. Only the owner changes a list's settings; everyone who
-  sees it adds, checks off and puts back entries.
+  and those shared with the household. Only the owner changes a list's settings and area order;
+  everyone who sees it adds, edits, checks off and puts back entries.
 
   After every change `{:list_changed, list_id}` goes out on the topic `"lists"` and on the
   list's own topic; it carries no content, so a subscriber reloads what its scope may see.
@@ -13,6 +13,7 @@ defmodule Zipfelschmaus.Shopping do
   alias Ecto.Changeset
   alias Phoenix.PubSub
   alias Zipfelschmaus.{Catalog, Names, Repo}
+  alias Zipfelschmaus.Catalog.{Area, Article}
   alias Zipfelschmaus.Shopping.{Entry, ShoppingList}
   alias Zipfelschmaus.Users.Scope
 
@@ -64,8 +65,9 @@ defmodule Zipfelschmaus.Shopping do
   @doc "A changeset for the list's settings form."
   def change_list(%ShoppingList{} = list, attrs \\ %{}), do: ShoppingList.changeset(list, attrs)
 
+  @doc "Creates a list with the default area order."
   def create_list(%Scope{user: user}, attrs) do
-    %ShoppingList{owner_id: user.id}
+    %ShoppingList{owner_id: user.id, area_order: Enum.map(Catalog.list_areas(), & &1.id)}
     |> ShoppingList.changeset(attrs)
     |> Repo.insert()
     |> tap_broadcast()
@@ -83,6 +85,42 @@ defmodule Zipfelschmaus.Shopping do
     list |> Repo.delete() |> tap_broadcast()
   end
 
+  @doc "The areas in the list's area order; an area the list does not know yet comes last."
+  def list_areas(%ShoppingList{} = list), do: Enum.sort_by(Catalog.list_areas(), area_rank(list))
+
+  @doc "Moves the area one place `:up` or `:down` in the area order of the user's own list."
+  def move_area(%Scope{} = scope, %ShoppingList{} = list, area_id, direction)
+      when direction in [:up, :down] do
+    with %ShoppingList{} = list <- get_own_list(scope, list.id) || {:error, :not_found} do
+      area_order = list |> list_areas() |> Enum.map(& &1.id) |> move(area_id, direction)
+
+      list
+      |> Changeset.change(area_order: area_order)
+      |> Repo.update()
+      |> tap_broadcast()
+    end
+  end
+
+  defp move(ids, id, direction) do
+    case Enum.find_index(ids, &(&1 == id)) do
+      nil -> ids
+      index -> swap(ids, index, if(direction == :up, do: index - 1, else: index + 1))
+    end
+  end
+
+  defp swap(ids, index, other) when other >= 0 and other < length(ids) do
+    ids
+    |> List.replace_at(index, Enum.at(ids, other))
+    |> List.replace_at(other, Enum.at(ids, index))
+  end
+
+  defp swap(ids, _index, _other), do: ids
+
+  defp area_rank(%ShoppingList{area_order: area_order}) do
+    ranks = area_order |> Enum.with_index() |> Map.new()
+    fn %Area{id: id, position: position} -> {Map.get(ranks, id, length(area_order)), position} end
+  end
+
   defp tap_broadcast({:ok, %ShoppingList{id: id}} = result) do
     broadcast(id)
     result
@@ -95,28 +133,23 @@ defmodule Zipfelschmaus.Shopping do
 
   defp tap_broadcast(error), do: error
 
-  @doc "The open entries with article and area, in the default area order, then by name."
-  def list_open_entries(%ShoppingList{id: list_id}) do
+  @doc "The open entries with article and area, in the list's area order, then by name."
+  def list_open_entries(%ShoppingList{id: list_id} = list) do
+    rank = area_rank(list)
+
     Repo.all(
-      from e in Entry,
-        join: a in assoc(e, :article),
-        join: ar in assoc(a, :area),
-        where: e.list_id == ^list_id and is_nil(e.checked_off_at),
-        preload: [article: {a, area: ar}]
+      from e in with_article(Entry), where: e.list_id == ^list_id and is_nil(e.checked_off_at)
     )
-    |> Enum.sort_by(&{&1.article.area.position, Names.sort_key(&1.article.name)})
+    |> Enum.sort_by(&{rank.(&1.article.area), Names.sort_key(&1.article.name)})
   end
 
   @doc ~s("Zuletzt verwendet": the newest #{@recent_limit} checked-off entries with article and area.)
   def list_recent_entries(%ShoppingList{id: list_id}) do
     Repo.all(
-      from e in Entry,
-        join: a in assoc(e, :article),
-        join: ar in assoc(a, :area),
+      from e in with_article(Entry),
         where: e.list_id == ^list_id and not is_nil(e.checked_off_at),
         order_by: [desc: e.checked_off_at, desc: e.id],
-        limit: @recent_limit,
-        preload: [article: {a, area: ar}]
+        limit: @recent_limit
     )
   end
 
@@ -124,10 +157,9 @@ defmodule Zipfelschmaus.Shopping do
   def change_new_entry(attrs \\ %{}) do
     {%{}, %{name: :string, detail: :string}}
     |> Changeset.cast(attrs, [:name, :detail])
-    |> Changeset.update_change(:detail, &String.trim/1)
     |> Changeset.validate_required([:name])
-    |> Changeset.validate_length(:name, max: 80)
-    |> Changeset.validate_length(:detail, max: 80)
+    |> Article.validate_name()
+    |> Entry.validate_detail()
   end
 
   @doc """
@@ -198,12 +230,47 @@ defmodule Zipfelschmaus.Shopping do
       else: changeset
   end
 
-  defp get_entry(scope, entry_id) do
+  @doc "A changeset for the form that changes an entry's detail."
+  def change_detail(%Entry{} = entry, attrs \\ %{}), do: Entry.detail_changeset(entry, attrs)
+
+  @doc "Changes the entry's detail; a blank one removes it."
+  def update_detail(%Scope{} = scope, entry_id, attrs) do
+    case get_entry(scope, entry_id) do
+      nil -> {:error, :not_found}
+      entry -> entry |> Entry.detail_changeset(attrs) |> Repo.update() |> tap_broadcast()
+    end
+  end
+
+  @doc "Sets the area of the entry's article by hand; the article moves on every list."
+  def set_area(%Scope{} = scope, entry_id, area_id) do
+    with %Entry{} = entry <- get_entry(scope, entry_id) || {:error, :not_found},
+         %Area{} = area <- Catalog.get_area(area_id) || {:error, :not_found},
+         {:ok, article} <- Catalog.set_area_by_hand(entry.article, area) do
+      broadcast_article(article.id)
+      {:ok, article}
+    end
+  end
+
+  defp broadcast_article(article_id) do
+    from(e in Entry, where: e.article_id == ^article_id, select: e.list_id)
+    |> Repo.all()
+    |> Enum.each(&broadcast/1)
+  end
+
+  @doc "The entry with `id`, its article and area, if the user sees its list; otherwise nil."
+  def get_entry(%Scope{} = scope, entry_id) do
     Repo.one(
-      from e in Entry,
+      from e in with_article(Entry),
         join: l in subquery(visible(scope)),
         on: l.id == e.list_id,
         where: e.id == ^entry_id
     )
+  end
+
+  defp with_article(query) do
+    from e in query,
+      join: a in assoc(e, :article),
+      join: ar in assoc(a, :area),
+      preload: [article: {a, area: ar}]
   end
 end

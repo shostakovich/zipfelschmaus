@@ -1,7 +1,8 @@
 defmodule Zipfelschmaus.Catalog do
   @moduledoc """
   The household's articles and the shop areas they belong to (DECISIONS.md, 0005). Areas are
-  seeded with a default order; a new article starts in "Sonstiges".
+  seeded with a default order; a new article starts in "Sonstiges". An area set by hand applies on
+  every list and stays.
   """
 
   import Ecto.Query
@@ -13,6 +14,9 @@ defmodule Zipfelschmaus.Catalog do
 
   @doc "The areas in their default order."
   def list_areas, do: Repo.all(from a in Area, order_by: [a.position, a.id])
+
+  @doc "The area with `id`, or nil."
+  def get_area(id), do: Repo.get(Area, id)
 
   @doc "All articles by name."
   def list_articles, do: Article |> Repo.all() |> Enum.sort_by(&Names.sort_key(&1.name))
@@ -27,6 +31,13 @@ defmodule Zipfelschmaus.Catalog do
       %Article{} = article -> {:ok, article}
       nil -> create_article(name)
     end
+  end
+
+  @doc "Puts the article in `area` and marks the area as set by hand."
+  def set_area_by_hand(%Article{} = article, %Area{} = area) do
+    article
+    |> Article.area_by_hand_changeset(area)
+    |> Repo.update()
   end
 
   defp create_article(name) do
