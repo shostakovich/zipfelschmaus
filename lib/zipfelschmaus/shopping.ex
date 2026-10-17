@@ -220,6 +220,36 @@ defmodule Zipfelschmaus.Shopping do
     end
   end
 
+  @doc """
+  Applies check-offs and put-backs made offline, in order, each at the time it happened on the
+  device: a change newer than its entry's last check-state change wins, an older one is
+  dropped, as is one to an entry the user does not see. A time in the future counts as now.
+  """
+  def sync_check_states(%Scope{} = scope, changes) do
+    now = DateTime.utc_now()
+
+    {:ok, list_ids} =
+      Repo.transact(fn ->
+        {:ok, changes |> Enum.flat_map(&sync_check_state(scope, &1, now)) |> Enum.uniq()}
+      end)
+
+    Enum.each(list_ids, &broadcast/1)
+  end
+
+  defp sync_check_state(scope, %{entry_id: entry_id, checked_off?: checked_off?, at: at}, now) do
+    at = Enum.min([at, now], DateTime)
+
+    with %Entry{} = entry <- get_entry(scope, entry_id),
+         :gt <- DateTime.compare(at, entry.check_changed_at),
+         %Changeset{changes: changes} = changeset when changes != %{} <-
+           entry |> Changeset.change() |> set_checked_off(entry, checked_off?, at) do
+      Repo.update!(changeset)
+      [entry.list_id]
+    else
+      _unchanged -> []
+    end
+  end
+
   defp set_checked_off(changeset, entry, checked_off?, now) do
     if Entry.open?(entry) == checked_off?,
       do:

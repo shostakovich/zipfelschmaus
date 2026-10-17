@@ -73,6 +73,19 @@ defmodule ZipfelschmausWeb.HomeLiveTest do
         assert document |> LazyHTML.query("#{place} a[aria-current=page]") |> Enum.count() == 1
       end
     end
+
+    test "keeps the offline copy of the lists up to date", %{conn: conn, user: user} do
+      list = list_fixture(user, name: "Supermarkt", shared: true)
+      {:ok, view, _html} = live(conn, ~p"/")
+      assert has_element?(view, "#offline[phx-hook=Offline]")
+      assert_push_event view, "offline_copy", %{lists: [%{name: "Supermarkt", entries: []}]}
+
+      entry_fixture(user_fixture(), list, "Milch")
+
+      assert_push_event view, "offline_copy", %{
+        lists: [%{name: "Supermarkt", entries: [%{name: "Milch"}]}]
+      }
+    end
   end
 
   test "sends anonymous visitors to the sign-in page", %{conn: conn} do

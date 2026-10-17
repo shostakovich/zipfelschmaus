@@ -31,7 +31,7 @@ config :phoenix_live_view, root_tag_attribute: "phx-r"
 config :esbuild,
   version: "0.25.4",
   zipfelschmaus: [
-    args: ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js),
+    args: ~w(js/app.js js/offline.js --bundle --target=es2022 --outdir=../priv/static/assets/js),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]

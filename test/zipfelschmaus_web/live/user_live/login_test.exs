@@ -14,6 +14,12 @@ defmodule ZipfelschmausWeb.UserLive.LoginTest do
     refute html =~ "Registrieren"
   end
 
+  test "forgets the offline copy of whoever signed out", %{conn: conn} do
+    {:ok, lv, _html} = live(conn, ~p"/users/log-in")
+
+    assert has_element?(lv, "#offline-forget[phx-hook=OfflineForget]")
+  end
+
   test "sends a magic link to a known address", %{conn: conn} do
     user = user_fixture()
     {:ok, lv, _html} = live(conn, ~p"/users/log-in")

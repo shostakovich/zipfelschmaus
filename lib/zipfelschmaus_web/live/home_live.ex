@@ -3,6 +3,7 @@ defmodule ZipfelschmausWeb.HomeLive do
   use ZipfelschmausWeb, :live_view
 
   alias Zipfelschmaus.Shopping
+  alias ZipfelschmausWeb.OfflineCopy
 
   @impl true
   def mount(_params, _session, socket) do
@@ -18,7 +19,7 @@ defmodule ZipfelschmausWeb.HomeLive do
     {shared, private} =
       socket.assigns.current_scope |> Shopping.list_lists() |> Enum.split_with(& &1.shared)
 
-    assign(socket, shared: shared, private: private)
+    socket |> assign(shared: shared, private: private) |> OfflineCopy.push()
   end
 
   @impl true

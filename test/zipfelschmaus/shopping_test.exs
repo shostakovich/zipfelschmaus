@@ -382,6 +382,94 @@ defmodule Zipfelschmaus.ShoppingTest do
     end
   end
 
+  describe "sync_check_states/2" do
+    setup %{anna: anna} do
+      list = list_fixture(anna, shared: true)
+      milk = entry_fixture(anna, list, "Milch") |> changed_at(minutes_ago(20))
+      %{list: list, milk: milk}
+    end
+
+    test "applies a change newer than the entry's last check-state change, announced once",
+         %{as_ben: as_ben, list: list, milk: milk} do
+      checked_off_at = minutes_ago(10)
+      put_back_at = minutes_ago(5)
+      Shopping.subscribe_list(list.id)
+
+      :ok = Shopping.sync_check_states(as_ben, [sync(milk, true, checked_off_at)])
+
+      assert %Entry{checked_off_at: ^checked_off_at, check_changed_at: ^checked_off_at} =
+               Repo.get!(Entry, milk.id)
+
+      :ok = Shopping.sync_check_states(as_ben, [sync(milk, false, put_back_at)])
+
+      assert %Entry{checked_off_at: nil, check_changed_at: ^put_back_at} =
+               Repo.get!(Entry, milk.id)
+
+      assert_receive {:list_changed, id} when id == list.id
+      assert_receive {:list_changed, id} when id == list.id
+      refute_receive {:list_changed, _id}
+    end
+
+    test "drops a change older than the entry's last check-state change",
+         %{as_anna: as_anna, milk: milk} do
+      {:ok, _checked_off} = Shopping.check_off(as_anna, milk.id)
+      {:ok, _open} = Shopping.put_back(as_anna, milk.id)
+      milk = Repo.get!(Entry, milk.id)
+
+      :ok = Shopping.sync_check_states(as_anna, [sync(milk, true, minutes_ago(1))])
+
+      assert Repo.get!(Entry, milk.id) == milk
+    end
+
+    test "a change to the state the entry has keeps its time", %{as_anna: as_anna, milk: milk} do
+      :ok = Shopping.sync_check_states(as_anna, [sync(milk, false, minutes_ago(1))])
+
+      assert Repo.get!(Entry, milk.id) == milk
+    end
+
+    test "a time in the future counts as now", %{as_anna: as_anna, milk: milk} do
+      started = DateTime.utc_now()
+
+      :ok = Shopping.sync_check_states(as_anna, [sync(milk, true, minutes_ago(-60))])
+
+      assert %Entry{checked_off_at: at, check_changed_at: at} = Repo.get!(Entry, milk.id)
+      assert DateTime.compare(at, started) != :lt
+      assert DateTime.compare(at, DateTime.utc_now()) != :gt
+    end
+
+    test "applies the changes in order", %{as_anna: as_anna, milk: milk} do
+      :ok =
+        Shopping.sync_check_states(as_anna, [
+          sync(milk, true, minutes_ago(3)),
+          sync(milk, false, minutes_ago(2))
+        ])
+
+      assert Entry.open?(Repo.get!(Entry, milk.id))
+    end
+
+    test "leaves entries of lists the user does not see and unknown entries",
+         %{ben: ben, as_anna: as_anna} do
+      private = list_fixture(ben, shared: false)
+      eggs = entry_fixture(ben, private, "Eier") |> changed_at(minutes_ago(20))
+
+      :ok =
+        Shopping.sync_check_states(as_anna, [
+          sync(eggs, true, minutes_ago(1)),
+          %{entry_id: -1, checked_off?: true, at: minutes_ago(1)}
+        ])
+
+      assert Entry.open?(Repo.get!(Entry, eggs.id))
+    end
+  end
+
+  defp sync(entry, checked_off?, at),
+    do: %{entry_id: entry.id, checked_off?: checked_off?, at: at}
+
+  defp minutes_ago(minutes), do: DateTime.add(DateTime.utc_now(), -minutes, :minute)
+
+  defp changed_at(entry, at),
+    do: entry |> Ecto.Changeset.change(check_changed_at: at) |> Repo.update!()
+
   defp area_id(name), do: Enum.find(Catalog.list_areas(), &(&1.name == name)).id
 
   defp area_names(list), do: Enum.map(Shopping.list_areas(list), & &1.name)

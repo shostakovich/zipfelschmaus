@@ -21,6 +21,11 @@ jobs:
           version-file: .tool-versions
           version-type: strict
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
       - name: Cache deps and build
         uses: actions/cache@v6
         with:
@@ -43,6 +48,9 @@ jobs:
 
       - name: Run tests
         run: mix test --warnings-as-errors
+
+      - name: Run JavaScript tests
+        run: node --test assets/test/*.test.js
 
       # esbuild fails on an import that does not resolve; the tests never load the bundles.
       - name: Build assets
