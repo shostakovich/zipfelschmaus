@@ -42,7 +42,7 @@ Accepted, 2026-10-17
 
 ## 0006. A stateless MCP server behind a secret path
 
-Accepted, 2026-10-17
+Superseded by 0009, 2026-10-17
 
 - **Context:** Lists and recipes are edited from Claude; the connector cannot do the passkey login.
 - **Decision:** A hand-written, stateless JSON-RPC endpoint at `/mcp/<secret>` with an address filter, as in Zipfelkasse.
@@ -63,3 +63,11 @@ Accepted, 2026-10-17
 - **Context:** Food in the pantry goes bad unnoticed, and a rough emergency supply is wanted, without micro-managing every can.
 - **Decision:** Items are article, best-before month and count; taking one out by scan removes it from the earliest date. Items due within four weeks ask for a check, which also corrects the count. Each article may have a target stock, seeded from the federal emergency checklist; below it, one tap puts it on a list.
 - **Consequences:** Counts drift when nobody scans; the due check is the only correction, so dates must be entered.
+
+## 0009. One MCP secret per user
+
+Accepted, 2026-10-17
+
+- **Context:** ADR 0006 gave the MCP endpoint one secret with full access, but private lists must stay hidden from the other person, also through Claude.
+- **Decision:** Each user gets their own secret at `/mcp/<secret>`, stored only as its hash in `users_tokens`; a connector acts as that user and sees their own and the shared lists. The stateless endpoint and the address filter stay as in 0006.
+- **Consequences:** Whoever knows a secret has that user's access; rotating one leaves the other user's connector working, and each user sets up their own connector.
