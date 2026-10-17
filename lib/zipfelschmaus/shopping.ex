@@ -14,7 +14,7 @@ defmodule Zipfelschmaus.Shopping do
   alias Phoenix.PubSub
   alias Zipfelschmaus.{Catalog, Names, Repo}
   alias Zipfelschmaus.Catalog.{Area, Article}
-  alias Zipfelschmaus.Shopping.{Entry, ShoppingList}
+  alias Zipfelschmaus.Shopping.{AreaGuesses, Entry, ShoppingList}
   alias Zipfelschmaus.Users.Scope
 
   @recent_limit 30
@@ -163,21 +163,25 @@ defmodule Zipfelschmaus.Shopping do
   end
 
   @doc """
-  Puts the article named `name` on the list, creating an unknown article. An article that is
-  already on the list is not added twice: its entry is opened again and takes the new detail; a
-  blank detail keeps the one it has.
+  Puts the article named `name` on the list, creating an unknown article, whose area is then
+  guessed in the background. An article that is already on the list is not added twice: its
+  entry is opened again and takes the new detail; a blank detail keeps the one it has.
   """
   def add_entry(%Scope{} = scope, %ShoppingList{} = list, attrs) do
     with {:ok, input} <- Changeset.apply_action(change_new_entry(attrs), :insert),
-         %ShoppingList{} = list <- get_list(scope, list.id) || {:error, :not_found} do
-      Repo.transact(fn -> put_article(list, input.name, input[:detail]) end)
-      |> tap_broadcast()
+         %ShoppingList{} = list <- get_list(scope, list.id) || {:error, :not_found},
+         {:ok, {entry, article_was}} <-
+           Repo.transact(fn -> put_article(list, input.name, input[:detail]) end) do
+      broadcast(entry.list_id)
+      if article_was == :created, do: AreaGuesses.enqueue(entry.article_id)
+      {:ok, entry}
     end
   end
 
   defp put_article(list, name, detail) do
-    with {:ok, article} <- Catalog.find_or_create_article(name),
-         do: put_entry(list, article, detail)
+    with {:ok, article, article_was} <- Catalog.find_or_create_article(name),
+         {:ok, entry} <- put_entry(list, article, detail),
+         do: {:ok, {entry, article_was}}
   end
 
   defp put_entry(list, article, detail) do
@@ -276,6 +280,17 @@ defmodule Zipfelschmaus.Shopping do
     with %Entry{} = entry <- get_entry(scope, entry_id) || {:error, :not_found},
          %Area{} = area <- Catalog.get_area(area_id) || {:error, :not_found},
          {:ok, article} <- Catalog.set_area_by_hand(entry.article, area) do
+      broadcast_article(article.id)
+      {:ok, article}
+    end
+  end
+
+  @doc """
+  Guesses the area of the article with `article_id`, see `Catalog.guess_area/1`, and announces a
+  move to every list holding it.
+  """
+  def guess_area(article_id) do
+    with {:ok, article} <- Catalog.guess_area(article_id) do
       broadcast_article(article.id)
       {:ok, article}
     end

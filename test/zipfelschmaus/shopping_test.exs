@@ -4,8 +4,8 @@ defmodule Zipfelschmaus.ShoppingTest do
   import Zipfelschmaus.ShoppingFixtures
   import Zipfelschmaus.UsersFixtures
 
-  alias Zipfelschmaus.{Catalog, Shopping}
-  alias Zipfelschmaus.Shopping.{Entry, ShoppingList}
+  alias Zipfelschmaus.{Catalog, FakeLanguageModel, Shopping}
+  alias Zipfelschmaus.Shopping.{AreaGuesses, Entry, ShoppingList}
   alias Zipfelschmaus.Users.Scope
 
   setup do
@@ -169,6 +169,51 @@ defmodule Zipfelschmaus.ShoppingTest do
 
       assert Shopping.add_entry(as_anna, private, %{name: "Milch"}) == {:error, :not_found}
       assert Shopping.list_open_entries(private) == []
+    end
+
+    test "guesses the area of a new article in the background, not of a known one",
+         %{as_anna: as_anna, list: list} do
+      test = self()
+
+      FakeLanguageModel.stub(fn question ->
+        send(test, {:asked, question})
+        {:ok, ~s({"area": "Drogerie"})}
+      end)
+
+      {:ok, _entry} = Shopping.add_entry(as_anna, list, %{name: "Spülmaschinentabs"})
+      {:ok, _entry} = Shopping.add_entry(as_anna, list, %{name: "Milch"})
+      :sys.get_state(AreaGuesses)
+
+      assert_received {:asked, "Spülmaschinentabs"}
+      refute_received {:asked, _question}
+      assert Catalog.get_article_by_name("Spülmaschinentabs").area_id == area_id("Drogerie")
+    end
+  end
+
+  describe "guess_area/1" do
+    test "announces the guessed area to every list holding the article",
+         %{anna: anna, ben: ben} do
+      lists = [list_fixture(anna, shared: true), list_fixture(ben, shared: false)]
+      [entry | _entries] = for list <- lists, do: entry_fixture(ben, list, "Spülmaschinentabs")
+      :sys.get_state(AreaGuesses)
+      for list <- lists, do: Shopping.subscribe_list(list.id)
+      FakeLanguageModel.stub(fn _question -> {:ok, ~s({"area": "Drogerie"})} end)
+
+      {:ok, article} = Shopping.guess_area(entry.article_id)
+
+      assert article.area.name == "Drogerie"
+      for list <- lists, do: assert_receive({:list_changed, id} when id == list.id)
+    end
+
+    test "announces nothing when the area stays", %{anna: anna} do
+      list = list_fixture(anna, shared: true)
+      entry = entry_fixture(anna, list, "Spülmaschinentabs")
+      :sys.get_state(AreaGuesses)
+      Shopping.subscribe_list(list.id)
+      FakeLanguageModel.stub(fn _question -> {:ok, ~s({"area": "Sonstiges"})} end)
+
+      assert Shopping.guess_area(entry.article_id) == :unchanged
+      refute_received {:list_changed, _id}
     end
   end
 
@@ -469,8 +514,6 @@ defmodule Zipfelschmaus.ShoppingTest do
 
   defp changed_at(entry, at),
     do: entry |> Ecto.Changeset.change(check_changed_at: at) |> Repo.update!()
-
-  defp area_id(name), do: Enum.find(Catalog.list_areas(), &(&1.name == name)).id
 
   defp area_names(list), do: Enum.map(Shopping.list_areas(list), & &1.name)
 end
