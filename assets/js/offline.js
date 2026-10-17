@@ -3,7 +3,7 @@
 // the page reloads, and the signed-in page that loads syncs the queue.
 
 import { enqueue, listView, pendingCount, pendingText, startView } from "./offline/lists.js"
-import { readLists, readQueue, updateQueue } from "./offline/store.js"
+import { readCopy, readQueue, updateQueue } from "./offline/store.js"
 import { serverReachable } from "./offline/network.js"
 
 const RECONNECT_INTERVAL = 30000
@@ -12,7 +12,8 @@ const LIST_PATH = /^\/lists\/(\d+)$/
 const byId = (id) => document.getElementById(id)
 
 async function render() {
-  const [lists, queue] = await Promise.all([readLists(), readQueue()])
+  const { user_id: userId, lists } = await readCopy()
+  const queue = await readQueue(userId)
   const listId = Number(window.location.pathname.match(LIST_PATH)?.[1])
   const list = lists.find((list) => list.id === listId)
 
@@ -92,7 +93,8 @@ async function toggle(row) {
     at: new Date().toISOString(),
   }
 
-  await updateQueue((queue) => enqueue(queue, change))
+  const { user_id: userId } = await readCopy()
+  await updateQueue(userId, (queue) => enqueue(queue, change))
   await render()
 }
 

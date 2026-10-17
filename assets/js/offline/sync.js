@@ -7,15 +7,15 @@ const TIMEOUT = 10000
 
 let running
 
-export function sync() {
-  running ??= send()
+export function sync(userId) {
+  running ??= send(userId)
     .catch(() => {})
     .finally(() => (running = undefined))
   return running
 }
 
-async function send() {
-  const queue = await readQueue()
+async function send(userId) {
+  const queue = await readQueue(userId)
   if (queue.length === 0) return
 
   const response = await fetch("/sync", {
@@ -25,7 +25,7 @@ async function send() {
     signal: AbortSignal.timeout(TIMEOUT),
   })
 
-  if (SETTLED.includes(response.status)) await updateQueue((current) => acknowledge(current, queue))
+  if (SETTLED.includes(response.status)) await updateQueue(userId, (current) => acknowledge(current, queue))
 }
 
 const csrfToken = () => document.querySelector("meta[name='csrf-token']").getAttribute("content")

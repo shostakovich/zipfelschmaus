@@ -32,6 +32,7 @@ defmodule ZipfelschmausWeb.Router do
     get "/manifest.webmanifest", PwaController, :manifest
     get "/sw.js", PwaController, :service_worker
     get "/favicon.ico", PwaController, :favicon
+    forward "/mcp", MCPPlug, [], log: false
   end
 
   scope "/", ZipfelschmausWeb do
@@ -44,7 +45,10 @@ defmodule ZipfelschmausWeb.Router do
     pipe_through [:browser, :require_authenticated_user]
 
     live_session :require_authenticated_user,
-      on_mount: [{ZipfelschmausWeb.UserAuth, :require_authenticated}] do
+      on_mount: [
+        {ZipfelschmausWeb.UserAuth, :require_authenticated},
+        ZipfelschmausWeb.OfflineCopy
+      ] do
       live "/", HomeLive
       live "/lists/new", ListSettingsLive, :new
       live "/lists/:id", ListLive

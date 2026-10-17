@@ -47,7 +47,7 @@ defmodule ZipfelschmausWeb.SyncControllerTest do
   test "an applied change is announced on the list's topic",
        %{conn: conn, anna: anna, list: list} do
     milk = entry_fixture(anna, list, "Milch") |> created(minutes_ago(20))
-    Shopping.subscribe_list(list.id)
+    Shopping.subscribe_lists()
 
     post_changes(conn, [change(milk, true, minutes_ago(5))])
 

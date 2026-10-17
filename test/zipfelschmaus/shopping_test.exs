@@ -5,6 +5,7 @@ defmodule Zipfelschmaus.ShoppingTest do
   import Zipfelschmaus.UsersFixtures
 
   alias Zipfelschmaus.{Catalog, FakeLanguageModel, Shopping}
+  alias Zipfelschmaus.Catalog.Article
   alias Zipfelschmaus.Shopping.{AreaGuesses, Entry, ShoppingList}
   alias Zipfelschmaus.Users.Scope
 
@@ -72,10 +73,10 @@ defmodule Zipfelschmaus.ShoppingTest do
       assert Shopping.get_own_list(as_ben, list.id) == nil
     end
 
-    test "renaming and unsharing are announced on the list's topic",
+    test "renaming and unsharing are announced",
          %{anna: anna, as_anna: as_anna, as_ben: as_ben} do
       list = list_fixture(anna, name: "DM", shared: true)
-      Shopping.subscribe_list(list.id)
+      Shopping.subscribe_lists()
 
       {:ok, list} = Shopping.update_list(as_anna, list, %{name: "Drogerie", shared: false})
 
@@ -87,7 +88,7 @@ defmodule Zipfelschmaus.ShoppingTest do
     test "deleting a list deletes its entries", %{anna: anna, as_anna: as_anna} do
       list = list_fixture(anna)
       entry = entry_fixture(anna, list, "Milch")
-      Shopping.subscribe_list(list.id)
+      Shopping.subscribe_lists()
 
       {:ok, _list} = Shopping.delete_list(as_anna, list)
 
@@ -97,14 +98,14 @@ defmodule Zipfelschmaus.ShoppingTest do
     end
   end
 
-  describe "add_entry/3" do
+  describe "add_entry/4" do
     setup %{anna: anna}, do: %{list: list_fixture(anna, shared: true)}
 
     test "puts a known article on the list and announces it",
          %{as_ben: as_ben, list: list} do
-      Shopping.subscribe_list(list.id)
+      Shopping.subscribe_lists()
 
-      {:ok, entry} = Shopping.add_entry(as_ben, list, %{name: "milch", detail: " 2 l "})
+      {:ok, entry, :found} = Shopping.add_entry(as_ben, list, %{name: "milch", detail: " 2 l "})
 
       assert %Entry{detail: "2 l", checked_off_at: nil} = entry
       assert %DateTime{} = entry.check_changed_at
@@ -113,7 +114,7 @@ defmodule Zipfelschmaus.ShoppingTest do
     end
 
     test ~s(creates an unknown article under "Sonstiges"), %{as_anna: as_anna, list: list} do
-      {:ok, _entry} = Shopping.add_entry(as_anna, list, %{name: "Glitzerkonfetti"})
+      {:ok, _entry, :created} = Shopping.add_entry(as_anna, list, %{name: "Glitzerkonfetti"})
 
       assert [entry] = Shopping.list_open_entries(list)
       assert entry.article.name == "Glitzerkonfetti"
@@ -125,7 +126,8 @@ defmodule Zipfelschmaus.ShoppingTest do
          %{anna: anna, as_ben: as_ben, list: list} do
       milk = entry_fixture(anna, list, "Milch", "2 l")
 
-      {:ok, entry} = Shopping.add_entry(as_ben, list, %{name: "Milch", detail: "1 l Hafer"})
+      {:ok, entry, _article_was} =
+        Shopping.add_entry(as_ben, list, %{name: "Milch", detail: "1 l Hafer"})
 
       assert entry.id == milk.id
       assert [%Entry{detail: "1 l Hafer"}] = Shopping.list_open_entries(list)
@@ -134,7 +136,8 @@ defmodule Zipfelschmaus.ShoppingTest do
     test "keeps the detail when none is given", %{anna: anna, as_anna: as_anna, list: list} do
       entry_fixture(anna, list, "Milch", "2 l")
 
-      {:ok, _entry} = Shopping.add_entry(as_anna, list, %{name: "Milch", detail: "  "})
+      {:ok, _entry, _article_was} =
+        Shopping.add_entry(as_anna, list, %{name: "Milch", detail: "  "})
 
       assert [%Entry{detail: "2 l"}] = Shopping.list_open_entries(list)
     end
@@ -143,7 +146,8 @@ defmodule Zipfelschmaus.ShoppingTest do
       milk = entry_fixture(anna, list, "Milch", "2 l")
       {:ok, checked_off} = Shopping.check_off(as_anna, milk.id)
 
-      {:ok, entry} = Shopping.add_entry(as_anna, list, %{name: "Milch", detail: "3 l"})
+      {:ok, entry, _article_was} =
+        Shopping.add_entry(as_anna, list, %{name: "Milch", detail: "3 l"})
 
       assert entry.id == milk.id
       assert %Entry{checked_off_at: nil, detail: "3 l"} = entry
@@ -164,6 +168,36 @@ defmodule Zipfelschmaus.ShoppingTest do
       assert %{detail: ["darf höchstens 80 Zeichen lang sein"]} = errors_on(changeset)
     end
 
+    test "creates an unknown article in the area given, as set by hand, without a guess",
+         %{as_anna: as_anna, list: list} do
+      test = self()
+
+      FakeLanguageModel.stub(fn question ->
+        send(test, {:asked, question})
+        {:ok, ~s({"area": "Drogerie"})}
+      end)
+
+      household = Catalog.get_area(area_id("Haushalt"))
+
+      {:ok, entry, :created} =
+        Shopping.add_entry(as_anna, list, %{name: "Spülmaschinentabs"}, household)
+
+      :sys.get_state(AreaGuesses)
+
+      refute_received {:asked, _question}
+      assert %{area_set_by_hand: true} = article = Repo.get!(Article, entry.article_id)
+      assert article.area_id == household.id
+    end
+
+    test "keeps the area of a known article although one is given",
+         %{as_anna: as_anna, list: list} do
+      {:ok, entry, :found} =
+        Shopping.add_entry(as_anna, list, %{name: "Milch"}, Catalog.get_area(area_id("Haushalt")))
+
+      assert %{area_set_by_hand: false} = article = Repo.get!(Article, entry.article_id)
+      assert article.area_id == area_id("Kühlregal")
+    end
+
     test "adds nothing to a list the user does not see", %{ben: ben, as_anna: as_anna} do
       private = list_fixture(ben, shared: false)
 
@@ -180,8 +214,10 @@ defmodule Zipfelschmaus.ShoppingTest do
         {:ok, ~s({"area": "Drogerie"})}
       end)
 
-      {:ok, _entry} = Shopping.add_entry(as_anna, list, %{name: "Spülmaschinentabs"})
-      {:ok, _entry} = Shopping.add_entry(as_anna, list, %{name: "Milch"})
+      {:ok, _entry, _article_was} =
+        Shopping.add_entry(as_anna, list, %{name: "Spülmaschinentabs"})
+
+      {:ok, _entry, _article_was} = Shopping.add_entry(as_anna, list, %{name: "Milch"})
       :sys.get_state(AreaGuesses)
 
       assert_received {:asked, "Spülmaschinentabs"}
@@ -196,7 +232,7 @@ defmodule Zipfelschmaus.ShoppingTest do
       lists = [list_fixture(anna, shared: true), list_fixture(ben, shared: false)]
       [entry | _entries] = for list <- lists, do: entry_fixture(ben, list, "Spülmaschinentabs")
       :sys.get_state(AreaGuesses)
-      for list <- lists, do: Shopping.subscribe_list(list.id)
+      Shopping.subscribe_lists()
       FakeLanguageModel.stub(fn _question -> {:ok, ~s({"area": "Drogerie"})} end)
 
       {:ok, article} = Shopping.guess_area(entry.article_id)
@@ -209,7 +245,7 @@ defmodule Zipfelschmaus.ShoppingTest do
       list = list_fixture(anna, shared: true)
       entry = entry_fixture(anna, list, "Spülmaschinentabs")
       :sys.get_state(AreaGuesses)
-      Shopping.subscribe_list(list.id)
+      Shopping.subscribe_lists()
       FakeLanguageModel.stub(fn _question -> {:ok, ~s({"area": "Sonstiges"})} end)
 
       assert Shopping.guess_area(entry.article_id) == :unchanged
@@ -239,7 +275,7 @@ defmodule Zipfelschmaus.ShoppingTest do
          %{anna: anna, as_ben: as_ben, list: list} do
       milk = entry_fixture(anna, list, "Milch", "2 l")
       eggs = entry_fixture(anna, list, "Eier")
-      Shopping.subscribe_list(list.id)
+      Shopping.subscribe_lists()
 
       {:ok, checked_off} = Shopping.check_off(as_ben, milk.id)
       {:ok, _eggs} = Shopping.check_off(as_ben, eggs.id)
@@ -312,11 +348,11 @@ defmodule Zipfelschmaus.ShoppingTest do
       assert Enum.map(Shopping.list_areas(list), & &1.id) == default
     end
 
-    test "the owner moves an area up and down, announced on the list's topic",
+    test "the owner moves an area up and down, announced",
          %{as_anna: as_anna, list: list} do
       default = area_names(list)
       index = Enum.find_index(default, &(&1 == "Drogerie"))
-      Shopping.subscribe_list(list.id)
+      Shopping.subscribe_lists()
 
       {:ok, list} = Shopping.move_area(as_anna, list, area_id("Drogerie"), :up)
 
@@ -368,7 +404,7 @@ defmodule Zipfelschmaus.ShoppingTest do
     test "changes its detail; a blank one removes it",
          %{anna: anna, as_ben: as_ben, list: list} do
       milk = entry_fixture(anna, list, "Milch", "2 l")
-      Shopping.subscribe_list(list.id)
+      Shopping.subscribe_lists()
 
       {:ok, entry} = Shopping.update_detail(as_ben, milk.id, %{detail: " 3 l "})
       assert entry.detail == "3 l"
@@ -392,7 +428,7 @@ defmodule Zipfelschmaus.ShoppingTest do
       private = list_fixture(anna, name: "DM", shared: false)
       tabs = entry_fixture(anna, list, "Spülmaschinentabs")
       entry_fixture(anna, private, "Spülmaschinentabs")
-      Shopping.subscribe_list(private.id)
+      Shopping.subscribe_lists()
 
       {:ok, article} = Shopping.set_area(as_ben, tabs.id, area_id("Haushalt"))
 
@@ -425,6 +461,20 @@ defmodule Zipfelschmaus.ShoppingTest do
 
       assert Shopping.set_area(as_anna, milk.id, -1) == {:error, :not_found}
     end
+
+    test "an article's area set by hand is announced to every list holding it",
+         %{anna: anna, as_ben: as_ben, list: list} do
+      entry_fixture(anna, list, "Spülmaschinentabs")
+      tabs = Catalog.get_article_by_name("Spülmaschinentabs")
+      Shopping.subscribe_lists()
+
+      {:ok, tabs} =
+        Shopping.set_article_area(as_ben, tabs, Catalog.get_area(area_id("Haushalt")))
+
+      assert tabs.area_set_by_hand
+      assert_receive {:list_changed, id} when id == list.id
+      assert [%{article: %{area: %{name: "Haushalt"}}}] = Shopping.list_open_entries(list)
+    end
   end
 
   describe "sync_check_states/2" do
@@ -438,7 +488,7 @@ defmodule Zipfelschmaus.ShoppingTest do
          %{as_ben: as_ben, list: list, milk: milk} do
       checked_off_at = minutes_ago(10)
       put_back_at = minutes_ago(5)
-      Shopping.subscribe_list(list.id)
+      Shopping.subscribe_lists()
 
       :ok = Shopping.sync_check_states(as_ben, [sync(milk, true, checked_off_at)])
 

@@ -1,4 +1,5 @@
-// IndexedDB holds the offline copy of the lists and the queue of changes made without reception.
+// IndexedDB holds the offline copy of the lists and, per user, the queue of changes made without
+// reception, so that a queue only ever syncs under its user's session.
 
 const DATABASE = "zipfelschmaus"
 const STORE = "offline"
@@ -47,9 +48,10 @@ const update = (key, fallback, change) =>
     }
   })
 
-export const readLists = () => read("lists", [])
-export const saveLists = (lists) => transact("readwrite", (store) => store.put(lists, "lists"))
-export const forgetLists = () => transact("readwrite", (store) => store.delete("lists"))
+export const readCopy = () => read("copy", { user_id: null, lists: [] })
+export const saveCopy = (copy) => transact("readwrite", (store) => store.put(copy, "copy"))
+export const forgetCopy = () => transact("readwrite", (store) => store.delete("copy"))
 
-export const readQueue = () => read("queue", [])
-export const updateQueue = (change) => update("queue", [], change)
+const queueKey = (userId) => `queue-${userId}`
+export const readQueue = (userId) => read(queueKey(userId), [])
+export const updateQueue = (userId, change) => update(queueKey(userId), [], change)

@@ -170,6 +170,37 @@ defmodule Zipfelschmaus.UsersTest do
     end
   end
 
+  describe "MCP secrets" do
+    test "a secret finds its user and is stored only as its hash" do
+      user = user_fixture()
+      secret = Users.create_mcp_secret(user)
+
+      assert Users.get_user_by_mcp_secret(secret).id == user.id
+      assert [%{token: hashed}] = Repo.all_by(UserToken, user_id: user.id, context: "mcp")
+      refute hashed == secret or hashed == Base.url_decode64!(secret, padding: false)
+      assert Users.get_user_by_mcp_secret(secret <> "x") == nil
+      assert Users.get_user_by_mcp_secret("not base64!") == nil
+    end
+
+    test "a new secret replaces the old one" do
+      user = user_fixture()
+      old = Users.create_mcp_secret(user)
+      new = Users.create_mcp_secret(user)
+
+      assert Users.get_user_by_mcp_secret(old) == nil
+      assert Users.get_user_by_mcp_secret(new).id == user.id
+    end
+
+    test "the first sign-in keeps the secret" do
+      user = unconfirmed_user_fixture()
+      secret = Users.create_mcp_secret(user)
+      {encoded_token, _hashed_token} = generate_user_magic_link_token(user)
+
+      assert {:ok, {_user, [_login_token]}} = Users.login_user_by_magic_link(encoded_token)
+      assert Users.get_user_by_mcp_secret(secret).id == user.id
+    end
+  end
+
   describe "passkeys" do
     setup do
       %{

@@ -11,7 +11,9 @@ defmodule Zipfelschmaus.ShoppingFixtures do
   end
 
   def entry_fixture(user, list, name, detail \\ nil) do
-    {:ok, entry} = Shopping.add_entry(Scope.for_user(user), list, %{name: name, detail: detail})
+    {:ok, entry, _article_was} =
+      Shopping.add_entry(Scope.for_user(user), list, %{name: name, detail: detail})
+
     entry
   end
 
