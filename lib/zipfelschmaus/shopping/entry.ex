@@ -5,6 +5,8 @@ defmodule Zipfelschmaus.Shopping.Entry do
   """
   use Zipfelschmaus.Schema
 
+  import Ecto.Changeset
+
   alias Zipfelschmaus.Catalog.Article
   alias Zipfelschmaus.Shopping.ShoppingList
 
@@ -17,6 +19,14 @@ defmodule Zipfelschmaus.Shopping.Entry do
     belongs_to :article, Article
 
     timestamps()
+  end
+
+  def detail_changeset(entry, attrs), do: entry |> cast(attrs, [:detail]) |> validate_detail()
+
+  def validate_detail(changeset) do
+    changeset
+    |> update_change(:detail, &(&1 && String.trim(&1)))
+    |> validate_length(:detail, max: 80)
   end
 
   def open?(%__MODULE__{checked_off_at: checked_off_at}), do: is_nil(checked_off_at)
