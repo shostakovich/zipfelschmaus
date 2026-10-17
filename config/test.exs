@@ -12,6 +12,8 @@ config :zipfelschmaus, ZipfelschmausWeb.Endpoint,
   secret_key_base: "oSkckoxbbhy6ivoipYI6Shgr2PkcWxWXT6/xGS94qtspD1pkfExi+IrtQcXjLpJo",
   server: false
 
+config :zipfelschmaus, Zipfelschmaus.Mailer, adapter: Swoosh.Adapters.Test
+
 config :logger, level: :warning
 
 config :phoenix, :plug_init_mode, :runtime

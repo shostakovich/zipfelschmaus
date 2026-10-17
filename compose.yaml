@@ -9,6 +9,10 @@ services:
     environment:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?the output of `openssl rand -hex 64`}
       PHX_HOST: ${PHX_HOST:?the public host name, e.g. schmaus.example.org}
+      SMTP_HOST: ${SMTP_HOST:?the mail server for sign-in links, e.g. smtp.example.org}
+      SMTP_USERNAME: ${SMTP_USERNAME:?the mail server login}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?the mail server password}
+      MAIL_FROM: ${MAIL_FROM:?the sender of sign-in links, e.g. schmaus@example.org}
       DATABASE_PATH: /app/data/zipfelschmaus.sqlite3
     volumes:
       - zipfelschmaus-data:/app/data

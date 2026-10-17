@@ -10,7 +10,7 @@ defmodule ZipfelschmausWeb.HomeLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} current={:lists}>
       <.header>Listen</.header>
       <.empty_state id="lists-empty" title="Noch keine Listen">
         Hier stehen bald eure Einkaufslisten.

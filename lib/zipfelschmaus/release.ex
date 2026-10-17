@@ -16,4 +16,25 @@ defmodule Zipfelschmaus.Release do
 
     :ok
   end
+
+  @doc "Creates a user who then signs in with a link sent by mail."
+  def create_user(email) do
+    Application.ensure_loaded(@app)
+
+    {:ok, result, _apps} =
+      Ecto.Migrator.with_repo(
+        Zipfelschmaus.Repo,
+        fn _repo -> Zipfelschmaus.Users.create_user(%{email: email}) end,
+        @repo_opts
+      )
+
+    case result do
+      {:ok, user} ->
+        IO.puts("Created #{user.email}; the sign-in page sends them a link.")
+
+      {:error, changeset} ->
+        IO.puts(:stderr, "Could not create #{email}: #{inspect(changeset.errors)}")
+        System.halt(1)
+    end
+  end
 end

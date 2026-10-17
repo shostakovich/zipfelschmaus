@@ -47,7 +47,14 @@ config :tailwind,
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
 
-config :setzkasten, translate_error: {ZipfelschmausWeb.CoreComponents, :translate_error}
+config :zipfelschmaus, Zipfelschmaus.Mailer, adapter: Swoosh.Adapters.Local
+config :zipfelschmaus, :mail_from, {"ZipfelSchmaus", "schmaus@localhost"}
+config :swoosh, :api_client, false
+config :swoosh, :json_library, JSON
+
+config :setzkasten,
+  icons: ZipfelschmausWeb.Icons,
+  translate_error: {ZipfelschmausWeb.CoreComponents, :translate_error}
 
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
