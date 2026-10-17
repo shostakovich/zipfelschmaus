@@ -29,15 +29,15 @@ defmodule Zipfelschmaus.Catalog do
 
   @doc """
   The article named `name`, and whether it was `:found` or `:created`; an unknown name becomes a
-  new article in "Sonstiges".
+  new article in `area`, as set by hand, or without one in "Sonstiges".
   """
-  def find_or_create_article(name) when is_binary(name) do
+  def find_or_create_article(name, area \\ nil) when is_binary(name) do
     case get_article_by_name(name) do
       %Article{} = article ->
         {:ok, article, :found}
 
       nil ->
-        with {:ok, article} <- create_article(name), do: {:ok, article, :created}
+        with {:ok, article} <- create_article(name, area), do: {:ok, article, :created}
     end
   end
 
@@ -118,10 +118,14 @@ defmodule Zipfelschmaus.Catalog do
     if count == 1, do: {:ok, %{article | area_id: area.id, area: area}}, else: :unchanged
   end
 
-  defp create_article(name) do
-    area = Repo.get_by!(Area, key: @fallback_area)
+  defp create_article(name, nil),
+    do: insert_article(%Article{}, name, Repo.get_by!(Area, key: @fallback_area))
 
-    %Article{}
+  defp create_article(name, %Area{} = area),
+    do: insert_article(%Article{area_set_by_hand: true}, name, area)
+
+  defp insert_article(article, name, area) do
+    article
     |> Article.create_changeset(%{name: name, area_id: area.id})
     |> Repo.insert()
   end

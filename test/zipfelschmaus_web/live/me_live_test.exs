@@ -3,6 +3,7 @@ defmodule ZipfelschmausWeb.MeLiveTest do
 
   import Phoenix.LiveViewTest
   import Setzkasten.Test.Confirm
+  import Zipfelschmaus.ShoppingFixtures
   import Zipfelschmaus.UsersFixtures
 
   alias Zipfelschmaus.Users
@@ -18,6 +19,23 @@ defmodule ZipfelschmausWeb.MeLiveTest do
       assert has_element?(lv, "#theme-toggle")
       assert has_element?(lv, ~s(#log-out[href="/users/log-out"][data-method=delete]))
       assert has_element?(lv, "nav.dock a[aria-current=page]", "Ich")
+    end
+
+    test "keeps the offline copy of the lists up to date", %{conn: conn, user: user} do
+      list = list_fixture(user, name: "Supermarkt", shared: true)
+      {:ok, lv, _html} = live(conn, ~p"/me")
+      user_id = user.id
+
+      assert_push_event lv, "offline_copy", %{
+        user_id: ^user_id,
+        lists: [%{name: "Supermarkt", entries: []}]
+      }
+
+      entry_fixture(user_fixture(), list, "Milch")
+
+      assert_push_event lv, "offline_copy", %{
+        lists: [%{name: "Supermarkt", entries: [%{name: "Milch"}]}]
+      }
     end
 
     test "lists the passkeys and offers to add one", %{conn: conn, user: user} do

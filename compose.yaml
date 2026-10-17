@@ -14,6 +14,10 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:?the mail server password}
       MAIL_FROM: ${MAIL_FROM:?the sender of sign-in links, e.g. schmaus@example.org}
       DATABASE_PATH: /app/data/zipfelschmaus.sqlite3
+      # Who may call the MCP endpoints; each user's secret comes from Release.create_mcp_secret/1.
+      # MCP_ALLOWED_CIDRS: 160.79.104.0/21
+      # Only the reverse proxy's own address: every host in a trusted network could claim any client address.
+      # TRUSTED_PROXIES: 172.18.0.1/32
     volumes:
       - zipfelschmaus-data:/app/data
 

@@ -1,6 +1,6 @@
 import Config
 
-alias Zipfelschmaus.TLS
+alias Zipfelschmaus.{Network, TLS}
 
 if System.get_env("PHX_SERVER") do
   config :zipfelschmaus, ZipfelschmausWeb.Endpoint, server: true
@@ -13,6 +13,18 @@ env = fn name ->
   value = if read_env?, do: name |> System.get_env("") |> String.trim(), else: ""
   if value != "", do: value
 end
+
+networks! = fn name, default ->
+  case Network.parse_list(env.(name) || default) do
+    {:ok, networks} -> networks
+    {:error, reason} -> raise "invalid #{name}: #{reason}"
+  end
+end
+
+# The users' secrets come from Release.create_mcp_secret/1, not from the environment.
+config :zipfelschmaus, :mcp,
+  allowed_cidrs: networks!.("MCP_ALLOWED_CIDRS", "160.79.104.0/21"),
+  trusted_proxies: networks!.("TRUSTED_PROXIES", "")
 
 port =
   case Integer.parse(env.("PORT") || "4000") do

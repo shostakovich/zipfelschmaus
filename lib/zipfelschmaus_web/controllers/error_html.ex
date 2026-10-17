@@ -1,5 +1,8 @@
 defmodule ZipfelschmausWeb.ErrorHTML do
-  @moduledoc "German error pages in the app's shell, with the way back to the start page."
+  @moduledoc """
+  German error pages in the app's shell, with the way back to the start page; the MCP endpoint
+  answers in plain text.
+  """
   use ZipfelschmausWeb, :html
 
   alias Plug.Conn.Status
@@ -18,6 +21,9 @@ defmodule ZipfelschmausWeb.ErrorHTML do
 
   @doc "The page's message for a status."
   def message(status), do: Map.get(@messages, status, Status.reason_phrase(status))
+
+  def render(template, %{conn: %Plug.Conn{path_info: ["mcp" | _rest]}}),
+    do: Phoenix.Controller.status_message_from_template(template)
 
   def render(_template, assigns) do
     message = message(assigns.status)

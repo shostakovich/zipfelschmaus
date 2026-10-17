@@ -1,6 +1,7 @@
 defmodule ZipfelschmausWeb.UserLive.ConfirmationTest do
   use ZipfelschmausWeb.ConnCase
 
+  import ExUnit.CaptureLog
   import Phoenix.LiveViewTest
   import Zipfelschmaus.UsersFixtures
 
@@ -38,5 +39,15 @@ defmodule ZipfelschmausWeb.UserLive.ConfirmationTest do
       conn |> live(~p"/users/log-in/invalid") |> follow_redirect(conn, ~p"/users/log-in")
 
     assert html =~ "Der Link ist ungültig oder abgelaufen."
+  end
+
+  test "keeps the token out of the request log", %{conn: conn, token: token} do
+    level = Logger.level()
+    Logger.configure(level: :info)
+    on_exit(fn -> Logger.configure(level: level) end)
+
+    log = capture_log([level: :info], fn -> get(conn, ~p"/users/log-in/#{token}") end)
+
+    refute log =~ token
   end
 end

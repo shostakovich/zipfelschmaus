@@ -10,7 +10,6 @@ defmodule ZipfelschmausWeb.ListLive do
 
   alias Zipfelschmaus.{Catalog, Shopping}
   alias Zipfelschmaus.Shopping.ShoppingList
-  alias ZipfelschmausWeb.OfflineCopy
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -22,7 +21,6 @@ defmodule ZipfelschmausWeb.ListLive do
          |> push_navigate(to: ~p"/")}
 
       list ->
-        if connected?(socket), do: Shopping.subscribe_list(list.id)
         {:ok, socket |> assign_new_entry_form() |> close_edit() |> assign_list(list)}
     end
   end
@@ -40,7 +38,7 @@ defmodule ZipfelschmausWeb.ListLive do
 
   def handle_event("add", %{"entry" => params}, socket) do
     case Shopping.add_entry(socket.assigns.current_scope, socket.assigns.list, params) do
-      {:ok, _entry} ->
+      {:ok, _entry, _article_was} ->
         {:noreply, assign_new_entry_form(socket)}
 
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -80,7 +78,10 @@ defmodule ZipfelschmausWeb.ListLive do
   end
 
   @impl true
-  def handle_info({:list_changed, _list_id}, socket), do: {:noreply, reload(socket)}
+  def handle_info({:list_changed, list_id}, %{assigns: %{list: %{id: list_id}}} = socket),
+    do: {:noreply, reload(socket)}
+
+  def handle_info({:list_changed, _other_list_id}, socket), do: {:noreply, socket}
 
   # A change that worked comes back as a broadcast, which reloads.
   defp reload_unless_ok(socket, {:ok, _changed}), do: socket
@@ -130,7 +131,6 @@ defmodule ZipfelschmausWeb.ListLive do
       recent: recent,
       article_options: article_options(recent)
     )
-    |> OfflineCopy.push()
   end
 
   defp assign_new_entry_form(socket),

@@ -2,7 +2,7 @@ defmodule Zipfelschmaus.Users do
   @moduledoc """
   Users sign in with a passkey or, as a fallback, a sign-in link by mail. There are no passwords
   and no sign-up: users are created by `mix zipfelschmaus.create_user` or
-  `Release.create_user/1`.
+  `Release.create_user/1`. An MCP connector acts as the user whose secret it calls with.
   """
 
   import Ecto.Query, warn: false
@@ -87,13 +87,38 @@ defmodule Zipfelschmaus.Users do
   defp update_user_and_delete_all_tokens(changeset) do
     Repo.transact(fn ->
       with {:ok, user} <- Repo.update(changeset) do
-        tokens_to_expire = Repo.all_by(UserToken, user_id: user.id)
+        tokens_to_expire =
+          Repo.all(from t in UserToken, where: t.user_id == ^user.id and t.context != "mcp")
 
         Repo.delete_all(from(t in UserToken, where: t.id in ^Enum.map(tokens_to_expire, & &1.id)))
 
         {:ok, {user, tokens_to_expire}}
       end
     end)
+  end
+
+  @doc """
+  Gives the user a new secret for the MCP endpoint, `/mcp/<secret>`, and returns it; the old one
+  stops working. Only its hash is stored.
+  """
+  def create_mcp_secret(%User{} = user) do
+    {secret, user_token} = UserToken.build_mcp_secret(user)
+
+    {:ok, _user_token} =
+      Repo.transact(fn ->
+        Repo.delete_all(from t in UserToken, where: t.user_id == ^user.id and t.context == "mcp")
+        Repo.insert(user_token)
+      end)
+
+    secret
+  end
+
+  @doc "The user whose MCP secret this is, or nil."
+  def get_user_by_mcp_secret(secret) when is_binary(secret) do
+    case UserToken.verify_mcp_secret_query(secret) do
+      {:ok, query} -> Repo.one(query)
+      :error -> nil
+    end
   end
 
   def list_passkeys(%User{} = user) do

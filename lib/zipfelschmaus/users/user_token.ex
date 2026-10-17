@@ -1,8 +1,8 @@
 defmodule Zipfelschmaus.Users.UserToken do
   @moduledoc """
-  Session tokens and sign-in links. A session token lives in the signed session and cookie and is
-  stored as is, so a session can be ended on the server; a sign-in link's token is stored only as
-  its hash, so read access to the database signs no one in.
+  Session tokens, sign-in links and MCP secrets. A session token lives in the signed session and
+  cookie and is stored as is, so a session can be ended on the server; a sign-in link's token and
+  an MCP secret are stored only as their hash, so read access to the database signs no one in.
   """
   use Zipfelschmaus.Schema
   import Ecto.Query
@@ -78,6 +78,27 @@ defmodule Zipfelschmaus.Users.UserToken do
 
       :error ->
         :error
+    end
+  end
+
+  @doc "A new MCP secret and the record holding its hash; it does not expire."
+  def build_mcp_secret(user) do
+    secret = :crypto.strong_rand_bytes(@rand_size)
+
+    {Base.url_encode64(secret, padding: false),
+     %UserToken{token: :crypto.hash(@hash_algorithm, secret), context: "mcp", user_id: user.id}}
+  end
+
+  @doc "A query for the user of an MCP secret."
+  def verify_mcp_secret_query(secret) do
+    with {:ok, decoded_secret} <- Base.url_decode64(secret, padding: false) do
+      hashed_secret = :crypto.hash(@hash_algorithm, decoded_secret)
+
+      {:ok,
+       from(token in by_token_and_context_query(hashed_secret, "mcp"),
+         join: user in assoc(token, :user),
+         select: user
+       )}
     end
   end
 

@@ -61,13 +61,19 @@ defmodule ZipfelschmausWeb.Endpoint do
   plug ZipfelschmausWeb.Router
 
   @doc false
-  # Health checks poll /up and would flood the log.
+  # Health checks poll /up and would flood the log; the MCP and sign-in paths hold secrets.
   def log_level(%Plug.Conn{path_info: ["up"]}), do: false
+  def log_level(%Plug.Conn{path_info: ["mcp" | _rest]}), do: false
+  def log_level(%Plug.Conn{path_info: ["users", "log-in", _token]}), do: false
   def log_level(_conn), do: :info
 
   # Wrapped like the router's errors, so an error page keeps the headers set above.
   defp serve_fonts(conn, _opts), do: keep_headers_on_error(conn, Plug.Static, @fonts)
   defp serve_static(conn, _opts), do: keep_headers_on_error(conn, Plug.Static, @static)
+
+  # The MCP plug reads its body itself, after checking the client.
+  defp parse_body(%Plug.Conn{path_info: ["mcp" | _rest]} = conn, _opts), do: conn
+
   defp parse_body(conn, _opts), do: keep_headers_on_error(conn, Plug.Parsers, @parsers)
 
   defp keep_headers_on_error(conn, plug, opts) do

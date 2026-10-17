@@ -235,6 +235,22 @@ defmodule ZipfelschmausWeb.ListLiveTest do
     assert %{name: "Milch", checked_off_at: %DateTime{}} = first
   end
 
+  test "keeps the offline copy of the other lists up to date", %{
+    conn: conn,
+    user: user,
+    list: list
+  } do
+    apotheke = list_fixture(user, name: "Apotheke", shared: false)
+    {:ok, view, _html} = live(conn, ~p"/lists/#{apotheke}")
+    assert_push_event view, "offline_copy", %{lists: [_apotheke, %{entries: []}]}
+
+    entry_fixture(user_fixture(), list, "Milch")
+
+    assert_push_event view, "offline_copy", %{
+      lists: [%{entries: []}, %{name: "Supermarkt", entries: [%{name: "Milch"}]}]
+    }
+  end
+
   defp texts(view, selector) do
     view
     |> render()

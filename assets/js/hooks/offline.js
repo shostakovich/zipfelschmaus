@@ -1,4 +1,4 @@
-import { forgetLists, saveLists } from "../offline/store.js"
+import { forgetCopy, saveCopy } from "../offline/store.js"
 import { serverReachable } from "../offline/network.js"
 import { sync } from "../offline/sync.js"
 
@@ -30,13 +30,16 @@ export function watchUntilJoined() {
   if (document.getElementById("offline")) stopWatchingJoin = watch()
 }
 
-// On every signed-in page: keeps the offline copy, syncs the queue, and watches the server while
-// the socket is down.
+// On every signed-in page: keeps the offline copy, syncs the queue of the copy's user whenever a
+// copy arrives (on every mount, so also after a reconnect), and watches the server while the
+// socket is down.
 export const Offline = {
   mounted() {
     stopWatchingJoin()
-    this.handleEvent("offline_copy", ({ lists }) => saveLists(lists).catch(() => {}))
-    sync()
+    this.handleEvent("offline_copy", (copy) => {
+      saveCopy(copy).catch(() => {})
+      sync(copy.user_id)
+    })
   },
 
   disconnected() {
@@ -46,7 +49,6 @@ export const Offline = {
 
   reconnected() {
     this.stopWatching?.()
-    sync()
   },
 
   destroyed() {
@@ -57,6 +59,6 @@ export const Offline = {
 // On the sign-in pages: the lists of whoever signed out stay off this device.
 export const OfflineForget = {
   mounted() {
-    forgetLists().catch(() => {})
+    forgetCopy().catch(() => {})
   },
 }

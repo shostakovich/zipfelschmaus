@@ -4,8 +4,8 @@ defmodule Zipfelschmaus.Shopping do
   and those shared with the household. Only the owner changes a list's settings and area order;
   everyone who sees it adds, edits, checks off and puts back entries.
 
-  After every change `{:list_changed, list_id}` goes out on the topic `"lists"` and on the
-  list's own topic; it carries no content, so a subscriber reloads what its scope may see.
+  After every change `{:list_changed, list_id}` goes out on the topic `"lists"`; it carries no
+  content, so a subscriber reloads what its scope may see.
   """
 
   import Ecto.Query
@@ -19,20 +19,11 @@ defmodule Zipfelschmaus.Shopping do
 
   @recent_limit 30
 
-  @doc "Subscribes the caller to the changes of all lists, for overviews."
+  @doc "Subscribes the caller to the changes of all lists."
   def subscribe_lists, do: PubSub.subscribe(Zipfelschmaus.PubSub, "lists")
 
-  @doc "Subscribes the caller to the changes of one list."
-  def subscribe_list(list_id), do: PubSub.subscribe(Zipfelschmaus.PubSub, list_topic(list_id))
-
-  defp broadcast(list_id) do
-    for topic <- ["lists", list_topic(list_id)],
-        do: PubSub.broadcast(Zipfelschmaus.PubSub, topic, {:list_changed, list_id})
-
-    :ok
-  end
-
-  defp list_topic(list_id), do: "list:#{list_id}"
+  defp broadcast(list_id),
+    do: PubSub.broadcast(Zipfelschmaus.PubSub, "lists", {:list_changed, list_id})
 
   defp visible(%Scope{user: user}),
     do: from(l in ShoppingList, where: l.owner_id == ^user.id or l.shared)
@@ -163,23 +154,25 @@ defmodule Zipfelschmaus.Shopping do
   end
 
   @doc """
-  Puts the article named `name` on the list, creating an unknown article, whose area is then
-  guessed in the background. An article that is already on the list is not added twice: its
-  entry is opened again and takes the new detail; a blank detail keeps the one it has.
+  Puts the article named `name` on the list, with whether the article was `:found` or
+  `:created`. An unknown article is created in `area`, as set by hand, or without one in
+  "Sonstiges", its area then guessed in the background; a known article keeps its area. An
+  article that is already on the list is not added twice: its entry is opened again and takes
+  the new detail; a blank detail keeps the one it has.
   """
-  def add_entry(%Scope{} = scope, %ShoppingList{} = list, attrs) do
+  def add_entry(%Scope{} = scope, %ShoppingList{} = list, attrs, area \\ nil) do
     with {:ok, input} <- Changeset.apply_action(change_new_entry(attrs), :insert),
          %ShoppingList{} = list <- get_list(scope, list.id) || {:error, :not_found},
          {:ok, {entry, article_was}} <-
-           Repo.transact(fn -> put_article(list, input.name, input[:detail]) end) do
+           Repo.transact(fn -> put_article(list, input.name, input[:detail], area) end) do
       broadcast(entry.list_id)
-      if article_was == :created, do: AreaGuesses.enqueue(entry.article_id)
-      {:ok, entry}
+      if article_was == :created and is_nil(area), do: AreaGuesses.enqueue(entry.article_id)
+      {:ok, entry, article_was}
     end
   end
 
-  defp put_article(list, name, detail) do
-    with {:ok, article, article_was} <- Catalog.find_or_create_article(name),
+  defp put_article(list, name, detail, area) do
+    with {:ok, article, article_was} <- Catalog.find_or_create_article(name, area),
          {:ok, entry} <- put_entry(list, article, detail),
          do: {:ok, {entry, article_was}}
   end
@@ -279,7 +272,12 @@ defmodule Zipfelschmaus.Shopping do
   def set_area(%Scope{} = scope, entry_id, area_id) do
     with %Entry{} = entry <- get_entry(scope, entry_id) || {:error, :not_found},
          %Area{} = area <- Catalog.get_area(area_id) || {:error, :not_found},
-         {:ok, article} <- Catalog.set_area_by_hand(entry.article, area) do
+         do: set_article_area(scope, entry.article, area)
+  end
+
+  @doc "Sets the article's area by hand; it moves on every list."
+  def set_article_area(%Scope{}, %Article{} = article, %Area{} = area) do
+    with {:ok, article} <- Catalog.set_area_by_hand(article, area) do
       broadcast_article(article.id)
       {:ok, article}
     end
