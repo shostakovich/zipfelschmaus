@@ -8,7 +8,7 @@ services:
       - "127.0.0.1:4000:4000"
     environment:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?the output of `openssl rand -hex 64`}
-      PHX_HOST: schmaus.rocu.de
+      PHX_HOST: ${PHX_HOST:?the public host name, e.g. schmaus.example.org}
       DATABASE_PATH: /app/data/zipfelschmaus.sqlite3
     volumes:
       - zipfelschmaus-data:/app/data
