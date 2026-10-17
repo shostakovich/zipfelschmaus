@@ -35,6 +35,10 @@ defmodule Zipfelschmaus.MixProject do
       {:ecto_sql, "~> 3.13"},
       {:ecto_sqlite3, "~> 0.22"},
       {:bandit, "~> 1.5"},
+      # Sign-in links by mail (DECISIONS.md, 0004)
+      {:swoosh, "~> 1.29"},
+      # Swoosh's SMTP adapter.
+      {:gen_smtp, "~> 1.3"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.5", runtime: Mix.env() == :dev},
       {:daisyui,

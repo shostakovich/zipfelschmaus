@@ -20,6 +20,8 @@ config :zipfelschmaus, ZipfelschmausWeb.Endpoint,
     tailwind: {Tailwind, :install_and_run, [:zipfelschmaus, ~w(--watch)]}
   ]
 
+config :zipfelschmaus, dev_routes: true
+
 config :logger, :default_formatter, format: "[$level] $message\n"
 
 config :phoenix, :stacktrace_depth, 20
