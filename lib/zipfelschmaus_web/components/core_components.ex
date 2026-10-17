@@ -19,6 +19,7 @@ defmodule ZipfelschmausWeb.CoreComponents do
   defp german(:format, "has invalid format", _opts), do: "hat ein ungültiges Format"
   defp german(:cast, "is invalid", _opts), do: "ist ungültig"
   defp german(:unique, "has already been taken", _opts), do: "ist bereits vergeben"
+  defp german(:unsafe_unique, "has already been taken", _opts), do: "ist bereits vergeben"
   defp german(:acceptance, "must be accepted", _opts), do: "muss akzeptiert werden"
   defp german(:confirmation, "does not match" <> _, _opts), do: "stimmt nicht überein"
 
