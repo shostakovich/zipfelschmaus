@@ -14,6 +14,8 @@ config :zipfelschmaus, ZipfelschmausWeb.Endpoint,
 
 config :zipfelschmaus, Zipfelschmaus.Mailer, adapter: Swoosh.Adapters.Test
 
+config :zipfelschmaus, :language_model, Zipfelschmaus.FakeLanguageModel
+
 config :logger, level: :warning
 
 config :phoenix, :plug_init_mode, :runtime

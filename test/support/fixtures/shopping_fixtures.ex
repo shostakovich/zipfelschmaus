@@ -1,7 +1,7 @@
 defmodule Zipfelschmaus.ShoppingFixtures do
   @moduledoc "Lists and their entries for tests."
 
-  alias Zipfelschmaus.Shopping
+  alias Zipfelschmaus.{Catalog, Shopping}
   alias Zipfelschmaus.Users.Scope
 
   def list_fixture(user, attrs \\ %{}) do
@@ -14,4 +14,6 @@ defmodule Zipfelschmaus.ShoppingFixtures do
     {:ok, entry} = Shopping.add_entry(Scope.for_user(user), list, %{name: name, detail: detail})
     entry
   end
+
+  def area_id(name), do: Enum.find(Catalog.list_areas(), &(&1.name == name)).id
 end

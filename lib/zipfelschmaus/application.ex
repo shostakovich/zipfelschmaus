@@ -8,6 +8,7 @@ defmodule Zipfelschmaus.Application do
     children = [
       Zipfelschmaus.Repo,
       {Phoenix.PubSub, name: Zipfelschmaus.PubSub},
+      Zipfelschmaus.Shopping.AreaGuesses,
       ZipfelschmausWeb.Endpoint
     ]
 

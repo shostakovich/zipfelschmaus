@@ -1,7 +1,9 @@
 defmodule Zipfelschmaus.CatalogTest do
   use Zipfelschmaus.DataCase
 
-  alias Zipfelschmaus.Catalog
+  import ExUnit.CaptureLog
+
+  alias Zipfelschmaus.{Catalog, FakeLanguageModel}
   alias Zipfelschmaus.Catalog.Article
 
   describe "the seeded catalog" do
@@ -31,13 +33,13 @@ defmodule Zipfelschmaus.CatalogTest do
 
   describe "find_or_create_article/1" do
     test "finds an article regardless of case and spacing" do
-      {:ok, article} = Catalog.find_or_create_article("  ÄPFEL ")
+      {:ok, article, :found} = Catalog.find_or_create_article("  ÄPFEL ")
 
       assert article.name == "Äpfel"
     end
 
     test ~s(creates an unknown article in "Sonstiges") do
-      {:ok, article} = Catalog.find_or_create_article(" Glitzer   Konfetti ")
+      {:ok, article, :created} = Catalog.find_or_create_article(" Glitzer   Konfetti ")
 
       assert %Article{
                name: "Glitzer Konfetti",
@@ -47,7 +49,7 @@ defmodule Zipfelschmaus.CatalogTest do
              } = article
 
       assert Repo.preload(article, :area).area.name == "Sonstiges"
-      assert {:ok, ^article} = Catalog.find_or_create_article("glitzer konfetti")
+      assert {:ok, ^article, :found} = Catalog.find_or_create_article("glitzer konfetti")
     end
 
     test "refuses a blank or overlong name" do
@@ -85,4 +87,75 @@ defmodule Zipfelschmaus.CatalogTest do
       assert Catalog.get_article_by_name("Zahnpasta").area_id == picked.id
     end
   end
+
+  describe "guess_area/1" do
+    setup do
+      {:ok, article, :created} = Catalog.find_or_create_article("Spülmaschinentabs")
+      %{article: article}
+    end
+
+    test "moves the article to the area the model picks from the existing ones",
+         %{article: article} do
+      test = self()
+
+      FakeLanguageModel.stub(fn question, schema ->
+        send(test, {:asked, question, schema})
+        {:ok, ~s({"area": "Drogerie"})}
+      end)
+
+      assert {:ok, %Article{area: %{name: "Drogerie"}}} = Catalog.guess_area(article.id)
+
+      assert_received {:asked, "Spülmaschinentabs", schema}
+      assert schema.properties.area.enum == Enum.map(Catalog.list_areas(), & &1.name)
+      assert %{area: %{name: "Drogerie"}, area_set_by_hand: false} = reload(article)
+    end
+
+    test "an area set by hand while the model thinks wins", %{article: article} do
+      FakeLanguageModel.stub(fn _question ->
+        {:ok, _article} = Catalog.set_area_by_hand(article, area("Haushalt"))
+        {:ok, ~s({"area": "Drogerie"})}
+      end)
+
+      assert Catalog.guess_area(article.id) == :unchanged
+      assert %{area: %{name: "Haushalt"}, area_set_by_hand: true} = reload(article)
+    end
+
+    test "does not ask about an area set by hand", %{article: article} do
+      {:ok, _article} = Catalog.set_area_by_hand(article, area("Haushalt"))
+      test = self()
+      FakeLanguageModel.stub(fn _question -> send(test, :asked) end)
+
+      assert Catalog.guess_area(article.id) == :unchanged
+      refute_received :asked
+    end
+
+    test ~s(a failing model leaves the article in "Sonstiges"), %{article: article} do
+      FakeLanguageModel.stub(fn _question -> {:error, :unreachable} end)
+
+      assert capture_log(fn -> assert Catalog.guess_area(article.id) == :unchanged end) =~
+               "the area model failed: :unreachable"
+
+      assert reload(article).area.name == "Sonstiges"
+    end
+
+    test "ignores an answer off the schema", %{article: article} do
+      for answer <- [~s({"area": "Baumarkt"}), ~s({"bereich": "Drogerie"}), "Drogerie"] do
+        FakeLanguageModel.stub(fn _question -> {:ok, answer} end)
+
+        assert capture_log(fn -> assert Catalog.guess_area(article.id) == :unchanged end) =~
+                 "the area model answered off the schema"
+      end
+
+      assert reload(article).area.name == "Sonstiges"
+    end
+
+    test "leaves the article as it is without a model", %{article: article} do
+      assert Catalog.guess_area(article.id) == :unchanged
+      assert reload(article).area.name == "Sonstiges"
+    end
+  end
+
+  defp area(name), do: Enum.find(Catalog.list_areas(), &(&1.name == name))
+
+  defp reload(article), do: Article |> Repo.get!(article.id) |> Repo.preload(:area)
 end

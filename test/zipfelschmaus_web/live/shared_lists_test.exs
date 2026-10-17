@@ -5,6 +5,9 @@ defmodule ZipfelschmausWeb.SharedListsTest do
   import Zipfelschmaus.ShoppingFixtures
   import Zipfelschmaus.UsersFixtures
 
+  alias Zipfelschmaus.{FakeLanguageModel, Shopping}
+  alias Zipfelschmaus.Shopping.AreaGuesses
+
   setup :register_and_log_in_user
 
   setup %{user: anna} do
@@ -84,6 +87,62 @@ defmodule ZipfelschmausWeb.SharedListsTest do
     {path, flash} = assert_redirect(ben_list)
     assert path == ~p"/"
     assert flash["error"] == "Die Liste „DM“ gibt es für dich nicht mehr."
+  end
+
+  describe "the area of a new article" do
+    setup do
+      test = self()
+
+      FakeLanguageModel.stub(fn "Spülmaschinentabs" ->
+        send(test, {:guessing, self()})
+        receive do: (:answer -> {:ok, ~s({"area": "Drogerie"})})
+      end)
+    end
+
+    test "is guessed later and moves the entry for both",
+         %{conn: conn, anna: anna, ben_conn: ben_conn} do
+      list = list_fixture(anna, name: "Supermarkt", shared: true)
+      {:ok, anna_view, _html} = live(conn, ~p"/lists/#{list}")
+      {:ok, ben_view, _html} = live(ben_conn, ~p"/lists/#{list}")
+
+      anna_view |> form("#add-entry", entry: %{name: "Spülmaschinentabs"}) |> render_submit()
+
+      for view <- [anna_view, ben_view],
+          do: assert(has_element?(view, "#area-sonstiges li", "Spülmaschinentabs"))
+
+      answer_guess()
+
+      for view <- [anna_view, ben_view] do
+        assert has_element?(view, "#area-drogerie li", "Spülmaschinentabs")
+        refute has_element?(view, "#area-sonstiges")
+      end
+    end
+
+    test "is not guessed over an area set by hand before the answer",
+         %{conn: conn, anna: anna} do
+      list = list_fixture(anna, name: "Supermarkt", shared: true)
+      drugstore = list_fixture(anna, name: "DM")
+      {:ok, view, _html} = live(conn, ~p"/lists/#{list}")
+      {:ok, drugstore_view, _html} = live(conn, ~p"/lists/#{drugstore}")
+      view |> form("#add-entry", entry: %{name: "Spülmaschinentabs"}) |> render_submit()
+      entry_fixture(anna, drugstore, "Spülmaschinentabs")
+      [entry] = Shopping.list_open_entries(list)
+
+      view |> element("#entry-#{entry.id}-area-menu-item") |> render_click()
+      view |> form("#edit-area", edit: %{area_id: area_id("Haushalt")}) |> render_submit()
+      answer_guess()
+
+      for view <- [view, drugstore_view] do
+        assert has_element?(view, "#area-haushalt li", "Spülmaschinentabs")
+        refute has_element?(view, "#area-drogerie")
+      end
+    end
+
+    defp answer_guess do
+      assert_receive {:guessing, guesser}
+      send(guesser, :answer)
+      :sys.get_state(AreaGuesses)
+    end
   end
 
   defp open_entry_titles(view) do

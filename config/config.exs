@@ -47,6 +47,8 @@ config :tailwind,
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
 
+config :zipfelschmaus, :language_model, Zipfelschmaus.LanguageModel.ChatAPI
+
 config :zipfelschmaus, Zipfelschmaus.Mailer, adapter: Swoosh.Adapters.Local
 config :zipfelschmaus, :mail_from, {"ZipfelSchmaus", "schmaus@localhost"}
 config :swoosh, :api_client, false

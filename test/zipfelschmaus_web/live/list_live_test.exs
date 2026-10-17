@@ -235,8 +235,6 @@ defmodule ZipfelschmausWeb.ListLiveTest do
     assert %{name: "Milch", checked_off_at: %DateTime{}} = first
   end
 
-  defp area_id(name), do: Enum.find(Catalog.list_areas(), &(&1.name == name)).id
-
   defp texts(view, selector) do
     view
     |> render()

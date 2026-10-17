@@ -1,5 +1,7 @@
 import Config
 
+alias Zipfelschmaus.TLS
+
 if System.get_env("PHX_SERVER") do
   config :zipfelschmaus, ZipfelschmausWeb.Endpoint, server: true
 end
@@ -17,6 +19,14 @@ port =
     {port, ""} when port in 1..65_535 -> port
     _invalid -> raise "invalid PORT: #{inspect(env.("PORT"))} is not a port number"
   end
+
+# Area guesses by any OpenAI-compatible chat API, e.g. http://ollama:11434/v1; without URL and
+# model new articles stay in "Sonstiges".
+config :zipfelschmaus, Zipfelschmaus.LanguageModel.ChatAPI,
+  url: env.("MODEL_URL"),
+  model: env.("MODEL"),
+  api_key: env.("MODEL_KEY"),
+  thinking: env.("MODEL_THINKING") in ~w(on true 1)
 
 if config_env() == :dev do
   config :zipfelschmaus, ZipfelschmausWeb.Endpoint, http: [port: port], url: [port: port]
@@ -47,14 +57,7 @@ if config_env() == :prod do
       _invalid -> raise "invalid SMTP_PORT: #{inspect(env.("SMTP_PORT"))} is not a port number"
     end
 
-  verify_tls = [
-    verify: :verify_peer,
-    cacerts: :public_key.cacerts_get(),
-    server_name_indication: String.to_charlist(smtp_host),
-    depth: 99,
-    # Mailgun and others present wildcard certificates, which OTP's default check rejects.
-    customize_hostname_check: [match_fun: :public_key.pkix_verify_hostname_match_fun(:https)]
-  ]
+  verify_tls = TLS.verify_options(smtp_host)
 
   # Port 465 speaks TLS from the start, any other port upgrades with STARTTLS.
   config :zipfelschmaus, Zipfelschmaus.Mailer,
