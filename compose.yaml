@@ -1,0 +1,17 @@
+# An example; put the app behind a reverse proxy that terminates TLS and keeps strangers out.
+services:
+  zipfelschmaus:
+    image: ghcr.io/shostakovich/zipfelschmaus:latest
+    restart: unless-stopped
+    ports:
+      # Only on this host: Docker's published ports bypass the host's firewall.
+      - "127.0.0.1:4000:4000"
+    environment:
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?the output of `openssl rand -hex 64`}
+      PHX_HOST: schmaus.rocu.de
+      DATABASE_PATH: /app/data/zipfelschmaus.sqlite3
+    volumes:
+      - zipfelschmaus-data:/app/data
+
+volumes:
+  zipfelschmaus-data:
