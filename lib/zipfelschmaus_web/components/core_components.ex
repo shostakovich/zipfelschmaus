@@ -1,8 +1,24 @@
 defmodule ZipfelschmausWeb.CoreComponents do
   @moduledoc """
   The app's own pieces next to Setzkasten's components (`use Setzkasten` in `ZipfelschmausWeb`):
-  so far the German texts of Ecto's validation messages.
+  the picture of an article, the count of open entries and the German texts of Ecto's validation
+  messages.
   """
+  use Phoenix.Component
+  use Setzkasten
+
+  @doc "The picture beside an article: for now a neutral tile with its area's initial."
+  attr :article, :map, required: true, doc: "an article with its area"
+
+  def article_picture(assigns) do
+    ~H"""
+    <.avatar initials={String.first(@article.area.name)} />
+    """
+  end
+
+  @doc ~s(How many entries of a list are open: "3 offen", or "Nichts offen".)
+  def open_text(0), do: "Nichts offen"
+  def open_text(count), do: "#{count} offen"
 
   @doc "German messages from the validation pass through; Ecto's English ones are looked up."
   @spec translate_error({String.t(), keyword}) :: String.t()
