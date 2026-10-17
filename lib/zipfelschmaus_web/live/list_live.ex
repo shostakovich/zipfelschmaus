@@ -10,6 +10,7 @@ defmodule ZipfelschmausWeb.ListLive do
 
   alias Zipfelschmaus.{Catalog, Shopping}
   alias Zipfelschmaus.Shopping.ShoppingList
+  alias ZipfelschmausWeb.OfflineCopy
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -118,7 +119,8 @@ defmodule ZipfelschmausWeb.ListLive do
     open = Shopping.list_open_entries(list)
     recent = Shopping.list_recent_entries(list)
 
-    assign(socket,
+    socket
+    |> assign(
       page_title: Layouts.page_title(list.name),
       list: list,
       owner?: list.owner_id == socket.assigns.current_scope.user.id,
@@ -128,6 +130,7 @@ defmodule ZipfelschmausWeb.ListLive do
       recent: recent,
       article_options: article_options(recent)
     )
+    |> OfflineCopy.push()
   end
 
   defp assign_new_entry_form(socket),

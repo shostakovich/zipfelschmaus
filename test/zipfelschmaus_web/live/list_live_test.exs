@@ -195,6 +195,46 @@ defmodule ZipfelschmausWeb.ListLiveTest do
     assert_redirect(view, ~p"/")
   end
 
+  test "keeps the offline copy of every list the user sees", %{
+    conn: conn,
+    user: user,
+    list: list
+  } do
+    milk = entry_fixture(user, list, "Milch", "2 l")
+    eggs = entry_fixture(user, list, "Eier")
+    {:ok, _eggs} = Shopping.check_off(Scope.for_user(user), eggs.id)
+    list_fixture(user, name: "Apotheke", shared: false)
+    list_fixture(user_fixture(), name: "Geheim", shared: false)
+
+    {:ok, view, _html} = live(conn, ~p"/lists/#{list}")
+
+    assert_push_event view, "offline_copy", %{lists: [apotheke, supermarkt]}
+    assert %{name: "Apotheke", shared: false, entries: []} = apotheke
+    assert %{id: list_id, name: "Supermarkt", shared: true, areas: areas} = supermarkt
+    assert list_id == list.id
+    assert areas == Enum.map(Shopping.list_areas(list), &%{id: &1.id, name: &1.name})
+
+    assert [
+             %{
+               id: milk_id,
+               name: "Milch",
+               detail: "2 l",
+               area_id: milk_area_id,
+               checked_off_at: nil,
+               check_changed_at: %DateTime{}
+             },
+             %{name: "Eier", detail: nil, checked_off_at: %DateTime{}}
+           ] = supermarkt.entries
+
+    assert milk_id == milk.id
+    assert milk_area_id == area_id("Kühlregal")
+
+    view |> element("#entry-#{milk.id} button", "Abhaken: Milch") |> render_click()
+
+    assert_push_event view, "offline_copy", %{lists: [_apotheke, %{entries: [first | _]}]}
+    assert %{name: "Milch", checked_off_at: %DateTime{}} = first
+  end
+
   defp area_id(name), do: Enum.find(Catalog.list_areas(), &(&1.name == name)).id
 
   defp texts(view, selector) do

@@ -21,11 +21,23 @@ defmodule ZipfelschmausWeb.Router do
     plug :fetch_current_scope_for_user
   end
 
+  # What the service worker keeps for offline use; nothing in it belongs to a user.
+  pipeline :offline_page do
+    plug :accepts, ["html"]
+    plug :put_root_layout, html: {ZipfelschmausWeb.Layouts, :offline_root}
+  end
+
   scope "/", ZipfelschmausWeb do
     get "/up", HealthController, :show
     get "/manifest.webmanifest", PwaController, :manifest
     get "/sw.js", PwaController, :service_worker
     get "/favicon.ico", PwaController, :favicon
+  end
+
+  scope "/", ZipfelschmausWeb do
+    pipe_through :offline_page
+
+    get "/offline", OfflineController, :show
   end
 
   scope "/", ZipfelschmausWeb do
@@ -46,6 +58,7 @@ defmodule ZipfelschmausWeb.Router do
 
     post "/me/passkeys/options", PasskeyController, :registration_options
     post "/me/passkeys", PasskeyController, :create
+    post "/sync", SyncController, :create
   end
 
   scope "/", ZipfelschmausWeb do

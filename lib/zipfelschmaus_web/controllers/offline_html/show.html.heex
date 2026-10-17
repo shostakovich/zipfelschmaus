@@ -1,0 +1,71 @@
+<Layouts.app flash={%{}} current={:lists}>
+  <.alert id="offline-notice" tone={:warning} title="Keine Verbindung" class="mb-6">
+    <p>Abhaken und Zurücklegen gehen weiter, Hinzufügen und Ändern erst wieder mit Verbindung.</p>
+    <p id="offline-pending"></p>
+  </.alert>
+
+  <div id="offline-start" hidden>
+    <.header>Listen</.header>
+    <.empty_state id="lists-empty" title="Keine Listen offline" hidden>
+      Offline gibt es die Listen, die du zuletzt mit Verbindung gesehen hast.
+    </.empty_state>
+    <div class="flex flex-col gap-8">
+      <section id="shared-lists" aria-labelledby="shared-lists-title" hidden>
+        <.section_heading id="shared-lists-title">Geteilt</.section_heading>
+        <.list>{[]}</.list>
+      </section>
+      <section id="private-lists" aria-labelledby="private-lists-title" hidden>
+        <.section_heading id="private-lists-title">Nur für dich</.section_heading>
+        <.list>{[]}</.list>
+      </section>
+    </div>
+  </div>
+
+  <div id="offline-list" hidden>
+    <.header back={~p"/"}>
+      <span data-slot="name"></span>
+      <:subtitle><span data-slot="meta"></span></:subtitle>
+    </.header>
+    <div class="flex flex-col gap-8">
+      <.empty_state id="entries-empty" title="Nichts offen" hidden>
+        Hinzufügen geht wieder mit Verbindung.
+      </.empty_state>
+      <div id="open-entries" class="flex flex-col gap-8"></div>
+      <section id="recent-entries" aria-labelledby="recent-entries-title" hidden>
+        <.section_heading id="recent-entries-title">Zuletzt verwendet</.section_heading>
+        <.list>{[]}</.list>
+      </section>
+    </div>
+  </div>
+
+  <div id="offline-missing" hidden>
+    <.header back={~p"/"}>Liste nicht da</.header>
+    <.empty_state title="Diese Liste gibt es offline nicht">
+      Offline gibt es die Listen, die du zuletzt mit Verbindung gesehen hast.
+    </.empty_state>
+  </div>
+
+  <template id="offline-list-row">
+    <.list_row navigate={~p"/"}>
+      <span data-slot="name"></span>
+      <:leading><.avatar initials="·" /></:leading>
+      <:meta><span data-slot="meta"></span></:meta>
+    </.list_row>
+  </template>
+
+  <template id="offline-area">
+    <section>
+      <.section_heading count={0}><span data-slot="name"></span></.section_heading>
+      <.list>{[]}</.list>
+    </section>
+  </template>
+
+  <template id="offline-entry">
+    <.list_row on_click="toggle">
+      <span class="sr-only" data-slot="action"></span>
+      <span data-slot="name"></span>
+      <:leading><.avatar initials="·" /></:leading>
+      <:meta><span data-slot="detail"></span></:meta>
+    </.list_row>
+  </template>
+</Layouts.app>

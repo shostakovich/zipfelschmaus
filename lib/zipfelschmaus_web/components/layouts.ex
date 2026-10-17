@@ -26,6 +26,7 @@ defmodule ZipfelschmausWeb.Layouts do
       {render_slot(@inner_block)}
     </.app_shell>
 
+    <div id="offline" phx-hook="Offline" hidden></div>
     <.flash_group flash={@flash} />
     <.confirm_dialog />
     """
@@ -43,6 +44,7 @@ defmodule ZipfelschmausWeb.Layouts do
       </h1>
       {render_slot(@inner_block)}
     </main>
+    <div id="offline-forget" phx-hook="OfflineForget" hidden></div>
     <.flash_group flash={@flash} />
     """
   end

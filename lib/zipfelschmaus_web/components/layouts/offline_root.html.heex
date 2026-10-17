@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <.theme_meta />
+    <title>{@page_title}</title>
+    <.theme_script nonce={assigns[:csp_nonce]} />
+    <link rel="icon" type="image/png" sizes="32x32" href={~p"/images/icons/favicon.png"} />
+    <link rel="stylesheet" href={~p"/assets/css/app.css"} />
+    <script defer type="text/javascript" src={~p"/assets/js/offline.js"}>
+    </script>
+  </head>
+  <body class="bg-base-100 text-base-content">
+    {@inner_content}
+  </body>
+</html>
