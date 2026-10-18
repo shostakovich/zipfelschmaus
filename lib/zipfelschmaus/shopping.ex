@@ -154,11 +154,11 @@ defmodule Zipfelschmaus.Shopping do
   end
 
   @doc """
-  Puts the article named `name` on the list, with whether the article was `:found` or
-  `:created`. An unknown article is created in `area`, as set by hand, or without one in
-  "Sonstiges", its area then guessed in the background; a known article keeps its area. An
-  article that is already on the list is not added twice: its entry is opened again and takes
-  the new detail; a blank detail keeps the one it has.
+  Puts the article named `name` on the list and returns the entry with its article, and whether
+  the article was `:found` or `:created`. An unknown article is created in `area`, as set by
+  hand, or without one in "Sonstiges", its area then guessed in the background; a known article
+  keeps its area. An article that is already on the list is not added twice: its entry is
+  opened again and takes the new detail; a blank detail keeps the one it has.
   """
   def add_entry(%Scope{} = scope, %ShoppingList{} = list, attrs, area \\ nil) do
     with {:ok, input} <- Changeset.apply_action(change_new_entry(attrs), :insert),
@@ -174,7 +174,7 @@ defmodule Zipfelschmaus.Shopping do
   defp put_article(list, name, detail, area) do
     with {:ok, article, article_was} <- Catalog.find_or_create_article(name, area),
          {:ok, entry} <- put_entry(list, article, detail),
-         do: {:ok, {entry, article_was}}
+         do: {:ok, {%{entry | article: article}, article_was}}
   end
 
   defp put_entry(list, article, detail) do

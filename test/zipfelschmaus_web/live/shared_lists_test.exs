@@ -21,10 +21,9 @@ defmodule ZipfelschmausWeb.SharedListsTest do
     {:ok, anna_view, _html} = live(conn, ~p"/lists/#{list}")
     {:ok, ben_view, _html} = live(ben_conn, ~p"/lists/#{list}")
 
-    anna_view |> form("#add-entry", entry: %{name: "Milch", detail: "2 l"}) |> render_submit()
+    anna_view |> form("#add-entry", entry: %{name: "Milch"}) |> render_submit()
 
     assert has_element?(ben_view, "#open-entries li", "Milch")
-    assert has_element?(ben_view, "#open-entries li", "2 l")
   end
 
   test "a check-off in one session moves the entry to Zuletzt verwendet in the other",
@@ -37,24 +36,23 @@ defmodule ZipfelschmausWeb.SharedListsTest do
     ben_view |> element("#entry-#{entry.id} button", "Abhaken: Eier") |> render_click()
 
     refute has_element?(anna_view, "#open-entries #entry-#{entry.id}")
-    assert has_element?(anna_view, "#recent-entries #entry-#{entry.id}", "Eier")
+    assert has_element?(anna_view, "#recent-entries #recent-entry-#{entry.id}", "Eier")
+    assert has_element?(ben_view, "#flash-group", "Eier abgehakt")
+    refute has_element?(anna_view, "#flash-group", "Eier abgehakt")
   end
 
-  test "adding an article that is already on the list updates its detail",
+  test "adding an article that is already on the list keeps one entry and its detail",
        %{conn: conn, anna: anna, ben_conn: ben_conn} do
     list = list_fixture(anna, name: "Supermarkt", shared: true)
     entry_fixture(anna, list, "Milch", "2 l")
     {:ok, anna_view, _html} = live(conn, ~p"/lists/#{list}")
     {:ok, ben_view, _html} = live(ben_conn, ~p"/lists/#{list}")
 
-    ben_view
-    |> form("#add-entry", entry: %{name: "Milch", detail: "1 l Hafer"})
-    |> render_submit()
+    ben_view |> form("#add-entry", entry: %{name: "Milch"}) |> render_submit()
 
     for view <- [anna_view, ben_view] do
       assert open_entry_titles(view) == ["Abhaken: Milch"]
-      assert has_element?(view, "#open-entries li", "1 l Hafer")
-      refute has_element?(view, "#open-entries li", "2 l")
+      assert has_element?(view, "#open-entries li", "2 l")
     end
   end
 

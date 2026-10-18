@@ -27,13 +27,24 @@ defmodule ZipfelschmausWeb.OfflineControllerTest do
           "#offline-start #private-lists ul.list",
           "#offline-list h1 [data-slot=name]",
           "#offline-list #open-entries",
-          "#offline-list #recent-entries ul.list",
+          "#offline-list #recent-entries ul.list.setzkasten-list-dense",
           "template#offline-list-row",
           "template#offline-area",
-          "template#offline-entry"
+          "template#offline-entry",
+          "template#offline-recent-entry"
         ] do
       assert document |> LazyHTML.query(selector) |> Enum.count() == 1, selector
     end
+  end
+
+  test "lists the entries densely, those in Zuletzt verwendet quiet", %{document: document} do
+    assert document |> template("offline-area") |> count("ul.list.setzkasten-list-dense") == 1
+    assert document |> template("offline-entry") |> count("button.font-medium") == 1
+
+    recent = template(document, "offline-recent-entry")
+    assert count(recent, "li") == 1
+    assert count(recent, "button.font-normal [data-slot=name]") == 1
+    assert count(recent, "[data-slot=detail]") == 1
   end
 
   test "loads the offline script, not the LiveView one, and belongs to no one", %{
@@ -47,4 +58,14 @@ defmodule ZipfelschmausWeb.OfflineControllerTest do
     assert get_resp_header(conn, "set-cookie") == []
     assert get_resp_header(conn, "cache-control") == ["no-cache"]
   end
+
+  defp template(document, id) do
+    document
+    |> LazyHTML.query("template#" <> id)
+    |> LazyHTML.to_html()
+    |> String.replace(~r{\A<template[^>]*>|</template>\z}, "")
+    |> LazyHTML.from_fragment()
+  end
+
+  defp count(html, selector), do: html |> LazyHTML.query(selector) |> Enum.count()
 end

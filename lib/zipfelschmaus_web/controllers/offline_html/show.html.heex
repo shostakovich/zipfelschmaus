@@ -33,7 +33,7 @@
       <div id="open-entries" class="flex flex-col gap-8"></div>
       <section id="recent-entries" aria-labelledby="recent-entries-title" hidden>
         <.section_heading id="recent-entries-title">Zuletzt verwendet</.section_heading>
-        <.list>{[]}</.list>
+        <.list size={:dense}>{[]}</.list>
       </section>
     </div>
   </div>
@@ -56,12 +56,21 @@
   <template id="offline-area">
     <section>
       <.section_heading count={0}><span data-slot="name"></span></.section_heading>
-      <.list>{[]}</.list>
+      <.list size={:dense}>{[]}</.list>
     </section>
   </template>
 
   <template id="offline-entry">
     <.list_row on_click="toggle">
+      <span class="sr-only" data-slot="action"></span>
+      <span data-slot="name"></span>
+      <:leading><.avatar initials="·" /></:leading>
+      <:meta><span data-slot="detail"></span></:meta>
+    </.list_row>
+  </template>
+
+  <template id="offline-recent-entry">
+    <.list_row on_click="toggle" muted>
       <span class="sr-only" data-slot="action"></span>
       <span data-slot="name"></span>
       <:leading><.avatar initials="·" /></:leading>

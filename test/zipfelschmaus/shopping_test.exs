@@ -110,6 +110,7 @@ defmodule Zipfelschmaus.ShoppingTest do
       assert %Entry{detail: "2 l", checked_off_at: nil} = entry
       assert %DateTime{} = entry.check_changed_at
       assert entry.article_id == Catalog.get_article_by_name("Milch").id
+      assert entry.article.name == "Milch"
       assert_receive {:list_changed, id} when id == list.id
     end
 
@@ -517,6 +518,8 @@ defmodule Zipfelschmaus.ShoppingTest do
     end
 
     test "a change to the state the entry has keeps its time", %{as_anna: as_anna, milk: milk} do
+      milk = Repo.get!(Entry, milk.id)
+
       :ok = Shopping.sync_check_states(as_anna, [sync(milk, false, minutes_ago(1))])
 
       assert Repo.get!(Entry, milk.id) == milk

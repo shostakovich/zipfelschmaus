@@ -39,7 +39,7 @@ function renderList({ name, meta, areas, recent }) {
 
   byId("entries-empty").hidden = areas.length > 0
   byId("open-entries").replaceChildren(...areas.map(areaSection))
-  renderSection(byId("recent-entries"), recent.map(entryRow))
+  renderSection(byId("recent-entries"), recent.map((entry) => entryRow(entry, "offline-recent-entry")))
 }
 
 function renderSection(section, rows) {
@@ -65,12 +65,12 @@ function areaSection({ id, name, entries }) {
   heading.id = `area-${id}-title`
   heading.lastElementChild.textContent = entries.length
   fill(section, "name", name)
-  section.querySelector("ul").replaceChildren(...entries.map(entryRow))
+  section.querySelector("ul").replaceChildren(...entries.map((entry) => entryRow(entry)))
   return section
 }
 
-function entryRow({ id, name, detail, initial, checkedOff }) {
-  const row = clone("offline-entry")
+function entryRow({ id, name, detail, initial, checkedOff }, templateId = "offline-entry") {
+  const row = clone(templateId)
   row.id = `entry-${id}`
   row.dataset.entryId = id
   row.dataset.checkedOff = checkedOff
