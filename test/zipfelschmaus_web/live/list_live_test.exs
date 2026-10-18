@@ -123,25 +123,78 @@ defmodule ZipfelschmausWeb.ListLiveTest do
     view |> element("#entry-#{milk.id} button", "Abhaken: Milch") |> render_click()
 
     assert has_element?(view, "#entries-empty", "Nichts offen")
-    assert has_element?(view, "#recent-entries #entry-#{milk.id}", "2 l")
+    assert has_element?(view, "#recent-entries #recent-entry-#{milk.id}", "2 l")
 
-    view |> element("#entry-#{milk.id} button", "Wieder auf die Liste: Milch") |> render_click()
+    view
+    |> element("#recent-entry-#{milk.id} button", "Wieder auf die Liste: Milch")
+    |> render_click()
 
     assert has_element?(view, "#open-entries #entry-#{milk.id}")
     refute has_element?(view, "#recent-entries")
   end
 
-  test "adds a known article with a detail and empties the field",
+  test "open rows strike out as they leave, rows in Zuletzt verwendet are quiet",
+       %{conn: conn, user: user, list: list} do
+    milk = entry_fixture(user, list, "Milch")
+    eggs = entry_fixture(user, list, "Eier")
+    {:ok, _eggs} = Shopping.check_off(Scope.for_user(user), eggs.id)
+
+    {:ok, view, _html} = live(conn, ~p"/lists/#{list}")
+
+    assert has_element?(view, "#area-kuehlregal ul.setzkasten-list-dense #entry-#{milk.id}")
+    assert has_element?(view, "#entry-#{milk.id}[phx-remove] .setzkasten-strike", "Milch")
+    assert has_element?(view, "#recent-entries ul.setzkasten-list-dense #recent-entry-#{eggs.id}")
+    assert has_element?(view, "#recent-entry-#{eggs.id} button.font-normal", "Eier")
+    refute has_element?(view, "#recent-entry-#{eggs.id}[phx-remove]")
+  end
+
+  test "a check-off says so in a toast whose Rückgängig puts the entry back",
+       %{conn: conn, user: user, list: list} do
+    milk = entry_fixture(user, list, "Milch", "2 l")
+    {:ok, view, _html} = live(conn, ~p"/lists/#{list}")
+
+    view |> element("#entry-#{milk.id} button", "Abhaken: Milch") |> render_click()
+
+    assert has_element?(view, "#flash-group [role=status]", "Milch abgehakt")
+
+    view |> element("#flash-group button", "Rückgängig") |> render_click()
+
+    assert has_element?(view, "#open-entries #entry-#{milk.id}", "2 l")
+    refute has_element?(view, "#recent-entries")
+    refute has_element?(view, "#flash-group", "Milch abgehakt")
+  end
+
+  test "adds a known article and empties the field", %{conn: conn, list: list} do
+    {:ok, view, _html} = live(conn, ~p"/lists/#{list}")
+
+    view |> form("#add-entry", entry: %{name: "milch"}) |> render_change()
+    view |> form("#add-entry", entry: %{name: "milch"}) |> render_submit()
+
+    assert has_element?(view, "#area-kuehlregal li", "Milch")
+    assert has_element?(view, ~s(#add-entry input[name="entry[name]"]:not([value]\)))
+  end
+
+  test "the field for adding sits in the composer bar", %{conn: conn, list: list} do
+    {:ok, view, _html} = live(conn, ~p"/lists/#{list}")
+
+    assert has_element?(view, ~s(#add-entry-bar #add-entry input[name="entry[name]"]))
+    assert has_element?(view, ~s(#add-entry-bar #add-entry button[type=submit]))
+    refute has_element?(view, ~s(#add-entry input[name="entry[detail]"]))
+  end
+
+  test "an added article says so in a toast whose Angabe opens its detail",
        %{conn: conn, list: list} do
     {:ok, view, _html} = live(conn, ~p"/lists/#{list}")
 
-    view |> form("#add-entry", entry: %{name: "milch", detail: "2 l"}) |> render_change()
-    view |> form("#add-entry", entry: %{name: "milch", detail: "2 l"}) |> render_submit()
+    view |> form("#add-entry", entry: %{name: "milch"}) |> render_submit()
 
-    assert has_element?(view, "#area-kuehlregal li", "Milch")
-    assert has_element?(view, "#area-kuehlregal li", "2 l")
-    assert has_element?(view, ~s(#add-entry input[name="entry[name]"]:not([value]\)))
-    assert has_element?(view, ~s(#add-entry input[name="entry[detail]"]:not([value]\)))
+    assert has_element?(view, "#flash-group [role=status]", "Milch hinzugefügt")
+
+    view |> element("#flash-group button", "Angabe") |> render_click()
+
+    assert has_element?(view, ~s(#edit-entry[data-show="true"]))
+    assert has_element?(view, "#edit-entry-title", "Angabe für Milch")
+    refute has_element?(view, "#flash-group", "Milch hinzugefügt")
   end
 
   test ~s(an unknown name becomes a new article under "Sonstiges"), %{conn: conn, list: list} do
@@ -155,7 +208,7 @@ defmodule ZipfelschmausWeb.ListLiveTest do
   test "an empty name is refused", %{conn: conn, list: list} do
     {:ok, view, _html} = live(conn, ~p"/lists/#{list}")
 
-    view |> form("#add-entry", entry: %{name: " ", detail: "2 l"}) |> render_submit()
+    view |> form("#add-entry", entry: %{name: " "}) |> render_submit()
 
     assert has_element?(view, "#entry_name-error-0", "Muss ausgefüllt werden")
     assert has_element?(view, "#entries-empty")

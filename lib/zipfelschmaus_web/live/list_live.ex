@@ -1,10 +1,10 @@
 defmodule ZipfelschmausWeb.ListLive do
   @moduledoc """
   A list while shopping: the open entries grouped by area in the list's area order, a tap checks
-  one off; below them "Zuletzt verwendet", where a tap puts one back; at the bottom the field
-  that adds articles. Each entry's menu changes its detail or its article's area. Changes by
-  others show at once; a list that is deleted or no longer shared sends the reader back to the
-  start page.
+  one off, its toast undoes that; below them "Zuletzt verwendet", where a tap puts one back; at
+  the bottom the bar that adds articles, its toast opens the new entry's detail. Each entry's
+  menu changes its detail or its article's area. Changes by others show at once; a list that is
+  deleted or no longer shared sends the reader back to the start page.
   """
   use ZipfelschmausWeb, :live_view
 
@@ -26,8 +26,19 @@ defmodule ZipfelschmausWeb.ListLive do
   end
 
   @impl true
-  def handle_event("check_off", %{"id" => id}, socket),
-    do: {:noreply, reload_unless_ok(socket, Shopping.check_off(socket.assigns.current_scope, id))}
+  def handle_event("check_off", %{"id" => id}, socket) do
+    case Shopping.check_off(socket.assigns.current_scope, id) do
+      {:ok, entry} ->
+        {:noreply,
+         put_toast(socket, "#{entry.article.name} abgehakt",
+           action: "Rückgängig",
+           on_action: JS.push("put_back", value: %{id: entry.id})
+         )}
+
+      {:error, _reason} ->
+        {:noreply, reload(socket)}
+    end
+  end
 
   def handle_event("put_back", %{"id" => id}, socket),
     do: {:noreply, reload_unless_ok(socket, Shopping.put_back(socket.assigns.current_scope, id))}
@@ -38,8 +49,14 @@ defmodule ZipfelschmausWeb.ListLive do
 
   def handle_event("add", %{"entry" => params}, socket) do
     case Shopping.add_entry(socket.assigns.current_scope, socket.assigns.list, params) do
-      {:ok, _entry, _article_was} ->
-        {:noreply, assign_new_entry_form(socket)}
+      {:ok, entry, _article_was} ->
+        {:noreply,
+         socket
+         |> assign_new_entry_form()
+         |> put_toast("#{entry.article.name} hinzugefügt",
+           action: "Angabe",
+           on_action: JS.push("edit_detail", value: %{id: entry.id})
+         )}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :form, to_form(changeset, as: :entry))}
@@ -179,33 +196,45 @@ defmodule ZipfelschmausWeb.ListLive do
         <div :if={@areas != []} id="open-entries" class="flex flex-col gap-8">
           <section
             :for={[%{article: %{area: area}} | _] = entries <- @areas}
+            :key={area.key}
             id={"area-#{area.key}"}
             aria-labelledby={"area-#{area.key}-title"}
           >
             <.section_heading id={"area-#{area.key}-title"} count={length(entries)}>
               {area.name}
             </.section_heading>
-            <.list>
-              <.entry_row :for={entry <- entries} entry={entry} tap="check_off" tap_label="Abhaken" />
+            <.list size={:dense}>
+              <.entry_row
+                :for={entry <- entries}
+                :key={entry.id}
+                id={"entry-#{entry.id}"}
+                entry={entry}
+                tap="check_off"
+                tap_label="Abhaken"
+                exit={:strike}
+              />
             </.list>
           </section>
         </div>
 
         <section :if={@recent != []} id="recent-entries" aria-labelledby="recent-entries-title">
           <.section_heading id="recent-entries-title">Zuletzt verwendet</.section_heading>
-          <.list>
+          <.list size={:dense}>
             <.entry_row
               :for={entry <- @recent}
+              :key={entry.id}
+              id={"recent-entry-#{entry.id}"}
               entry={entry}
               tap="put_back"
               tap_label="Wieder auf die Liste"
+              muted
             />
           </.list>
         </section>
       </div>
 
-      <.form for={@form} id="add-entry" phx-change="change_entry" phx-submit="add" class="mt-8">
-        <.action_bar sticky>
+      <.composer id="add-entry-bar">
+        <.form for={@form} id="add-entry" phx-change="change_entry" phx-submit="add">
           <div class="flex w-full items-start gap-2">
             <div class="min-w-0 flex-1">
               <.combobox
@@ -218,20 +247,10 @@ defmodule ZipfelschmausWeb.ListLive do
                 placeholder="Was brauchst du?"
               />
             </div>
-            <div class="w-28 shrink-0">
-              <.input
-                field={@form[:detail]}
-                label="Angabe"
-                hide_label
-                placeholder="Angabe"
-                maxlength="80"
-                autocomplete="off"
-              />
-            </div>
             <.button type="submit" variant={:primary} icon="plus" icon_only label="Hinzufügen" />
           </div>
-        </.action_bar>
-      </.form>
+        </.form>
+      </.composer>
 
       <.modal
         id="edit-entry"
@@ -269,30 +288,35 @@ defmodule ZipfelschmausWeb.ListLive do
     """
   end
 
+  attr :id, :string, required: true
   attr :entry, :map, required: true
   attr :tap, :string, required: true
   attr :tap_label, :string, required: true
+  attr :muted, :boolean, default: false
+  attr :exit, :atom, default: :none
 
   defp entry_row(assigns) do
     ~H"""
     <.list_row
-      id={"entry-#{@entry.id}"}
+      id={@id}
       on_click={JS.push(@tap, value: %{id: @entry.id})}
       menu={:always}
       actions_label={"Aktionen: #{@entry.article.name}"}
+      muted={@muted}
+      exit={@exit}
     >
       <span class="sr-only">{@tap_label}:</span>
       {@entry.article.name}
       <:leading><.article_picture article={@entry.article} /></:leading>
       <:meta :if={@entry.detail}>{@entry.detail}</:meta>
       <:action
-        id={"entry-#{@entry.id}-detail"}
+        id={"#{@id}-detail"}
         label="Angabe ändern"
         icon="pencil"
         on_click={JS.push("edit_detail", value: %{id: @entry.id})}
       />
       <:action
-        id={"entry-#{@entry.id}-area"}
+        id={"#{@id}-area"}
         label="Bereich ändern"
         icon="tag"
         on_click={JS.push("edit_area", value: %{id: @entry.id})}
