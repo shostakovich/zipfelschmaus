@@ -56,6 +56,7 @@ RUN mix deps.compile
 
 COPY priv priv
 COPY lib lib
+COPY assets/vendor/lucide assets/vendor/lucide
 COPY --from=assets /app/priv/static priv/static
 
 RUN mix compile
